@@ -1,0 +1,15 @@
+.notes-page-layout {
+    display: flex;
+}
+
+.notes-content {
+    flex-grow: 1;
+    padding-left: 250px; /* Same as sidebar width */
+    transition: padding-left 0.3s ease-in-out;
+}
+
+@media (max-width: 768px) {
+    .notes-content {
+        padding-left: 0;
+    }
+} 

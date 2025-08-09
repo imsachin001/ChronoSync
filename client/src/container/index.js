@@ -1,0 +1,5 @@
+export {default as Home} from "./Home/Home"
+export {default as Tasks} from "./Tasks/Tasks"
+export {default as Analytics} from "./Analytics/Analytics"
+export {default as Notes} from "./Notes/Notes"
+export {default as Profile} from "./Profile/Profile"

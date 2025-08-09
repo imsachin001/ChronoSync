@@ -1,0 +1,156 @@
+.notes-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  margin: 32px 20px 10px 100px;
+}
+
+.note-card {
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #222);
+  border-radius: 12px;
+  box-shadow: 0 2px 8px 0 rgba(60, 60, 90, 0.10);
+  border: 1px solid var(--accent, #d9d9d9);
+  padding: 18px 16px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 210px;
+  transition: box-shadow 0.18s, transform 0.18s;
+  position: relative;
+  cursor: pointer;
+}
+
+.note-card:hover, .note-card:focus-within {
+  box-shadow: 0 6px 20px 0 rgba(60, 60, 90, 0.16);
+  transform: translateY(-2px) scale(1.01);
+}
+
+.note-card.pinned {
+  border-top: 3px solid var(--accent, #57bbfd);
+}
+
+.note-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.note-card-title {
+  font-size: 1.08rem;
+  font-weight: 600;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-card-untitled {
+  color: var(--text-secondary, #888);
+  font-style: italic;
+}
+
+.note-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.note-action-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary, #888);
+  font-size: 1.1rem;
+  border-radius: 40%;
+  padding: 5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  outline: none;
+}
+
+.note-action-btn:hover, .note-action-btn:focus {
+  background: var(--hover-color, #e3f2fd);
+  color: var(--accent, #cbeaff);
+}
+
+.note-action-btn.active {
+  color: var(--accent, #c8e9ff);
+}
+
+.note-action-btn.delete {
+  color: #dc3545;
+}
+
+.note-action-btn.delete:hover {
+  background-color: rgba(220, 53, 69, 0.1);
+}
+
+.note-card-content {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  font-size: 0.98rem;
+  color: var(--text-secondary, #444);
+  margin-top: 2px;
+  word-break: break-word;
+  min-height: 32px;
+  font-family: 'Roboto', sans-serif;
+}
+
+.notes-loading, .notes-empty {
+  text-align: center;
+  color: var(--text-secondary, #888);
+  margin: 40px 0 0 0;
+  font-size: 1.1rem;
+}
+
+@media (max-width: 600px) {
+  .notes-list {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .note-card {
+    padding: 14px 8px 10px 12px;
+  }
+}
+
+.dark .note-card {
+  background: var(--bg-primary, #000000);
+  color: var(--text-primary, #f5f5f5);
+  border: 1px solid var(--accent, #585757);
+  box-shadow: 0 2px 8px 0 rgba(20, 20, 30, 0.18);
+}
+
+.dark .note-card-content {
+  color: var(--text-secondary, #bbb);
+}
+
+.dark .note-action-btn {
+  color: var(--text-secondary, #aaa);
+}
+
+.dark .note-action-btn:hover, .dark .note-action-btn:focus {
+  background: #333;
+  color: var(--accent, #fae955);
+}
+
+.dark .note-action-btn.active {
+  color: var(--accent, #ffec43);
+}
+
+.dark .note-card.pinned {
+  border-top: 3px solid var(--accent, #f1ff74);
+}
+
+.note-reminder-label {
+  margin-left: 10px;
+  font-size: 0.95em;
+  color: #007bff;
+}
+
+.note-reminder-label.overdue {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.note-card.overdue-reminder {
+  border: 2px solid #dc3545;
+}

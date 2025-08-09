@@ -1,0 +1,80 @@
+.note-detail-modal {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.note-detail-content {
+  background: #fff;
+  padding: 2rem;
+  border-radius: 8px;
+  max-width: 900px;
+  width: 100%;
+  position: relative;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.2);
+}
+
+.note-detail-close {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+}
+
+.note-detail-edit {
+  background: #007bff;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1.2rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.note-detail-edit:hover {
+  background: #0056b3;
+}
+
+.note-detail-footer {
+  margin-top: 1.5rem;
+  text-align: right;
+}
+
+.note-detail-body {
+  margin-top: 1rem;
+  white-space: pre-wrap;
+  font-size: 1.1rem;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+
+/* Dark mode styles */
+.note-detail-modal.dark {
+  background: rgba(10, 10, 20, 0.85);
+}
+
+.note-detail-content.dark {
+  background: #181a1b;
+  color: #f1f1f1;
+  box-shadow: 0 2px 16px rgba(0,0,0,0.7);
+}
+
+.note-detail-content.dark .note-detail-edit {
+  background: #2563eb;
+  color: #fff;
+}
+
+.note-detail-content.dark .note-detail-edit:hover {
+  background: #1e40af;
+}
+
+.note-detail-content.dark .note-detail-close {
+  color: #f1f1f1;
+} 

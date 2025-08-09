@@ -1,0 +1,258 @@
+.note-popup-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  transition: background 0.2s;
+}
+
+.note-popup {
+  background: var(--bg-primary, #fff);
+  color: var(--text-primary, #222);
+  border-radius: 14px;
+  box-shadow: 0 8px 32px 0 rgba(60, 60, 90, 0.18);
+  padding: 24px;
+  width: 900px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden; 
+  animation: popupIn 0.18s ease-out;
+}
+
+.note-popup-body {
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 6px;
+  width: 800px;
+}
+
+
+@keyframes popupIn {
+  from { transform: translateY(30px) scale(0.98); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.note-title-input {
+  font-size: 1.1rem;
+  font-weight: 500;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary, #222);
+  padding: 4px 0 2px 0;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  margin-bottom: 4px;
+  transition: border-color 0.2s;
+}
+
+.note-title-input:focus {
+  border-bottom: 1.5px solid var(--accent, #57bbfd);
+}
+
+.note-content-input {
+  font-size: 1rem;
+  resize: none;
+  overflow-y: auto;
+  height: 450px;
+  max-height: 500px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary, #222);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+}
+
+.note-content-input:focus {
+  border-bottom: 1.5px solid var(--accent, #57bbfd);
+}
+
+.note-popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.note-save-btn, .note-cancel-btn {
+  padding: 6px 18px;
+  border-radius: 6px;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  background: var(--accent, #57bbfd);
+  color: #fff;
+  transition: background 0.18s, box-shadow 0.18s;
+}
+
+.note-cancel-btn {
+  background: var(--bg-secondary, #e0e0e0);
+  color: var(--text-secondary, #333);
+}
+
+.note-save-btn:hover {
+  background: #399be6;
+}
+
+.note-cancel-btn:hover {
+  background: #d3d3d3;
+}
+
+@media (max-width: 900px) {
+  .note-popup {
+    min-width: 90vw;
+    width: 98vw;
+    padding: 20px 4vw 16px 4vw;
+  }
+}
+
+@media (max-width: 600px) {
+  .note-popup {
+    min-width: 98vw;
+    width: 99vw;
+    padding: 12px 2vw 10px 2vw;
+  }
+}
+
+.dark .note-popup {
+  background: var(--bg-primary, #23272f) !important;
+  color: var(--text-primary, #f5f5f5);
+  box-shadow: 0 8px 32px 0 rgba(20, 20, 30, 0.28);
+}
+
+.dark .note-title-input,
+.dark .note-content-input {
+  color: var(--text-primary, #f5f5f5);
+  border-bottom: 1px solid var(--border-color, #444);
+}
+
+.dark .note-title-input:focus,
+.dark .note-content-input:focus {
+  border-bottom: 1.5px solid var(--accent, #fae955);
+}
+
+.dark .note-save-btn {
+  background: var(--accent, #fae955);
+  color: #333;
+}
+
+.dark .note-save-btn:hover {
+  background: #f7e010;
+}
+
+.dark .note-cancel-btn {
+  background: var(--bg-secondary, #444);
+  color: #eee;
+}
+
+.dark .note-cancel-btn:hover {
+  background: #222;
+}
+
+.note-popup-overlay.dark {
+  background: rgba(10, 10, 20, 0.85);
+}
+
+.note-popup.dark {
+  background: #292a2b !important;
+  color: #f1f1f1;
+  box-shadow: 0 8px 32px 0 rgba(20, 20, 30, 0.28);
+}
+
+.note-popup.dark .note-title-input,
+.note-popup.dark .note-content-input,
+.note-popup.dark .note-reminder-input {
+  color: #f1f1f1;
+  background: transparent;
+  border-bottom: 1px solid #444;
+}
+
+.note-popup.dark .note-title-input:focus,
+.note-popup.dark .note-content-input:focus,
+.note-popup.dark .note-reminder-input:focus {
+  border-bottom: 1.5px solid #fae955;
+}
+
+.note-popup.dark .note-save-btn {
+  background: #fae955;
+  color: #333;
+}
+
+.note-popup.dark .note-save-btn:hover {
+  background: #f7e010;
+}
+
+.note-popup.dark .note-cancel-btn {
+  background: #444;
+  color: #eee;
+}
+
+.note-popup.dark .note-cancel-btn:hover {
+  background: #222;
+}
+
+
+
+/* Force toolbar to dark mode */
+.jodit-dark .jodit-toolbar,
+.jodit-dark .jodit-toolbar__box {
+  background-color: #2b2b2b !important;
+  border-color: #444 !important;
+  color: #f0f0f0 !important;
+}
+
+/* Toolbar buttons normal */
+.jodit-dark .jodit-toolbar-button,
+.jodit-dark .jodit-toolbar-button .jodit-icon {
+  background-color: transparent !important;
+  color: #f0f0f0 !important;
+  filter: invert(0%) !important;
+}
+
+/* Toolbar button hover */
+.jodit-dark .jodit-toolbar-button:hover {
+  background-color: #444 !important;
+  color: #fff !important;
+}
+
+/* Dropdowns (font, size, etc.) */
+.jodit-dark .jodit-toolbar-button .jodit-toolbar__select-box {
+  background-color: #333 !important;
+  color: #fff !important;
+  border: 1px solid #555;
+}
+
+/* Disabled buttons */
+.jodit-dark .jodit-toolbar-button_disabled {
+  opacity: 0.4 !important;
+  pointer-events: none;
+}
+
+/* Status bar (if enabled) */
+.jodit-dark .jodit-status-bar {
+  background-color: #222 !important;
+  color: #999 !important;
+  border-top: 1px solid #444 !important;
+}
+
+/* Jodit Editor dark mode content area */
+.jodit-dark .jodit-workplace,
+.jodit-dark .jodit-wysiwyg {
+  background-color: #23272f !important;
+  color: #f1f1f1 !important;
+}
+
+/* Jodit Editor dark mode placeholder */
+.jodit-dark .jodit-placeholder {
+  color: #aaa !important;
+  opacity: 0.7 !important;
+} 
