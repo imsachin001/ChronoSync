@@ -58,7 +58,9 @@ router.post('/', verifyTokenMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Note content is required' });
     }
 
+    console.log('Creating note with reminder:', reminder);
     const reminderDate = reminder ? new Date(reminder) : null;
+    console.log('Parsed reminder date:', reminderDate);
 
     const note = new Note({
       title,
@@ -72,6 +74,7 @@ router.post('/', verifyTokenMiddleware, async (req, res) => {
     });
 
     await note.save();
+    console.log('Note saved:', { id: note._id, reminder: note.reminder });
     res.status(201).json(note);
   } catch (error) {
     console.error('Error creating note:', error);

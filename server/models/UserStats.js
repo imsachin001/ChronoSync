@@ -18,7 +18,7 @@ const userStatsSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  // Track daily statistics for more detailed analytics
+  // statistics for more detailed analytics
   dailyStats: [{
     date: {
       type: Date,
@@ -55,7 +55,7 @@ const userStatsSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Index for efficient queries
+// index for efficient queries
 userStatsSchema.index({ user: 1 });
 userStatsSchema.index({ 'dailyStats.date': 1 });
 

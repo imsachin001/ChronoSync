@@ -2,61 +2,35 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { FiPlus, FiSearch, FiRefreshCw, FiLogIn } from 'react-icons/fi';
 import ChatCard from './ChatCard';
 import './SavedChats.css';
+import { useAuth } from '../../../context/AuthContext';
 
 const SavedChats = () => {
+  const { isAuthenticated, getToken } = useAuth();
   const [chats, setChats] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChat, setSelectedChat] = useState(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-
-  // Function to validate token
-  const validateToken = useCallback(async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setIsAuthenticated(false);
-      return false;
-    }
-
-    try {
-      // Test if token is valid and not expired
-      const response = await fetch('/api/test-auth', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        setIsAuthenticated(true);
-        return true;
-      } else {
-        // Token is invalid or expired
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
-        return false;
-      }
-    } catch (error) {
-      console.error('Error validating token:', error);
-      setIsAuthenticated(false);
-      return false;
-    }
-  }, []);
 
   // Create a reusable function to fetch chats that can be called on demand
   const fetchSavedChats = useCallback(async () => {
     try {
       setLoading(true);
       
-      // First validate the token
-      const isValid = await validateToken();
-      if (!isValid) {
+      // Check if user is authenticated
+      if (!isAuthenticated) {
         setError('Please log in to view your saved chats');
         setLoading(false);
         return;
       }
       
-      const token = localStorage.getItem('token');
+      const token = await getToken();
+      if (!token) {
+        setError('Please log in to view your saved chats');
+        setLoading(false);
+        return;
+      }
+      
       console.log('Fetching saved chats with valid token');
       
       const response = await fetch('/api/chats', {
@@ -68,10 +42,8 @@ const SavedChats = () => {
       console.log('Fetch response status:', response.status);
       
       if (!response.ok) {
-        // If unauthorized, clear token and update state
+        // If unauthorized, show error
         if (response.status === 401) {
-          localStorage.removeItem('token');
-          setIsAuthenticated(false);
           setError('Your session has expired. Please log in again.');
           setLoading(false);
           return;
@@ -130,7 +102,7 @@ const SavedChats = () => {
     } finally {
       setLoading(false);
     }
-  }, [validateToken]);
+  }, [isAuthenticated, getToken]);
 
   useEffect(() => {
     fetchSavedChats();
@@ -141,7 +113,7 @@ const SavedChats = () => {
       try {
         console.log('Deleting chat with ID:', chatId);
         
-        const token = localStorage.getItem('token');
+        const token = await getToken();
         if (!token) {
           setError('Please log in to delete chats');
           return;

@@ -1,8 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { FiSend, FiCalendar, FiClock, FiCpu, FiSave, FiTrash2 } from 'react-icons/fi';
 import './AiScheduler.css';
+import { useAuth } from '../../../context/AuthContext';
+import { createApi } from '../../../utils/api';
 
 const AiScheduler = () => {
+  const { isAuthenticated, getToken } = useAuth();
+  const api = createApi(getToken);
   const [prompt, setPrompt] = useState('');
   const [messages, setMessages] = useState([
     {
@@ -13,11 +17,11 @@ const AiScheduler = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isViewingSavedChat, setIsViewingSavedChat] = useState(false);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [tasks, setTasks] = useState([]);
 
   useEffect(() => {
-    // Check authentication status
-    validateToken();
+    // Fetch user tasks
+    fetchTasks();
     
     // Check if we're viewing a saved chat
     const savedChat = localStorage.getItem('viewingChat');
@@ -34,35 +38,13 @@ const AiScheduler = () => {
     }
   }, []);
 
-  // Function to validate token
-  const validateToken = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      setIsAuthenticated(false);
-      return false;
-    }
-
+  const fetchTasks = async () => {
     try {
-      // Test if token is valid and not expired
-      const response = await fetch('/api/test-auth', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-
-      if (response.ok) {
-        setIsAuthenticated(true);
-        return true;
-      } else {
-        // Token is invalid or expired
-        localStorage.removeItem('token');
-        setIsAuthenticated(false);
-        return false;
-      }
+      if (!isAuthenticated) return;
+      const data = await api.getTasks();
+      setTasks(data);
     } catch (error) {
-      console.error('Error validating token:', error);
-      setIsAuthenticated(false);
-      return false;
+      console.error('Error fetching tasks:', error);
     }
   };
 
@@ -70,7 +52,7 @@ const AiScheduler = () => {
     setPrompt(e.target.value);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!prompt.trim()) return;
     
@@ -83,16 +65,45 @@ const AiScheduler = () => {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
     
-    // Simulate AI response after delay
-    setTimeout(() => {
+    try {
+      // Get token for API call
+      const token = await getToken();
+      
+      // Call backend API with Gemini integration
+      const response = await fetch('/api/ai/schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          prompt: prompt,
+          tasks: tasks
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to get AI response');
+      }
+      
+      const data = await response.json();
+      
       const aiResponse = {
         type: 'ai',
-        content: "I've analyzed your tasks and created an optimized schedule. Focus on completing the high-priority tasks first, and I've included regular breaks to maintain productivity."
+        content: data.response
       };
       
       setMessages(prev => [...prev, aiResponse]);
+    } catch (error) {
+      console.error('Error getting AI response:', error);
+      const errorResponse = {
+        type: 'ai',
+        content: 'Sorry, I encountered an error. Please try again later.'
+      };
+      setMessages(prev => [...prev, errorResponse]);
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
     
     // Clear the input
     setPrompt('');
@@ -105,16 +116,15 @@ const AiScheduler = () => {
     try {
       setIsSaving(true);
       
-      // Validate token before saving
-      const isValid = await validateToken();
-      if (!isValid) {
+      // Check authentication
+      if (!isAuthenticated) {
         alert("You need to be logged in to save chats. Please log in.");
         window.location.href = '/login';
         return;
       }
       
-      // Get token after validation
-      const token = localStorage.getItem('token');
+      // Get token
+      const token = await getToken();
       
       // Ensure all messages have the proper structure
       const formattedMessages = messages.map(msg => ({
@@ -151,8 +161,6 @@ const AiScheduler = () => {
         // Handle specific error cases
         if (response.status === 401) {
           alert("Authentication error. Please log in again.");
-          localStorage.removeItem('token');
-          setIsAuthenticated(false);
           window.location.href = '/login';
           return;
         }
@@ -232,7 +240,7 @@ const AiScheduler = () => {
               {message.type === 'system' && <FiCpu className="message-icon" />}
               {message.type === 'user' && <div className="user-icon">You</div>}
               {message.type === 'ai' && <FiCalendar className="message-icon" />}
-              <div className="message-content">{message.content}</div>
+              <div className="message-content" style={{ whiteSpace: 'pre-wrap' }}>{message.content}</div>
             </div>
           ))}
           

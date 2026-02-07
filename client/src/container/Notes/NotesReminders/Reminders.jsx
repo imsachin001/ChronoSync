@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import NotesList from '../NotesList/NotesList';
 import NotesForm from '../NotesForm/NotesForm';
 import './Reminders.css';
+import { useAuth } from '../../../context/AuthContext';
 
 const Reminders = () => {
+  const { getToken } = useAuth();
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingNote, setEditingNote] = useState(null);
@@ -24,7 +26,7 @@ const Reminders = () => {
 
   const fetchNotes = async () => {
     try {
-      const token = localStorage.getItem('token');
+      const token = await getToken();
       if (!token) {
         setLoading(false);
         return;
@@ -37,6 +39,8 @@ const Reminders = () => {
       });
       if (!response.ok) throw new Error('Failed to fetch notes');
       const data = await response.json();
+      console.log('All fetched notes:', data);
+      console.log('Notes with reminders:', data.filter(note => note.reminder));
       setNotes(data);
     } catch (err) {
       console.error('Error fetching Notes:', err);
@@ -47,13 +51,28 @@ const Reminders = () => {
 
   const handleEditNote = (note) => {
     setEditingNote(note);
+    // Format reminder for datetime-local input
+    let formattedReminder = null;
+    if (note.reminder) {
+      try {
+        const reminderDate = new Date(note.reminder);
+        if (!isNaN(reminderDate.getTime())) {
+          // Convert to local datetime string format (YYYY-MM-DDTHH:mm)
+          formattedReminder = new Date(reminderDate.getTime() - reminderDate.getTimezoneOffset() * 60000)
+            .toISOString()
+            .slice(0, 16);
+        }
+      } catch (e) {
+        console.error('Error formatting reminder:', e);
+      }
+    }
     setNewNote({
       title: note.title || '',
       content: note.content || '',
       pinned: note.pinned || false,
       archived: note.archived || false,
       trashed: note.trashed || false,
-      reminder: note.reminder || null,
+      reminder: formattedReminder,
     });
     setShowNoteForm(true);
   };
@@ -61,7 +80,7 @@ const Reminders = () => {
   const handleSaveNote = async () => {
     if (!newNote.content.trim()) return;
     try {
-      const token = localStorage.getItem('token');
+      const token = await getToken();
       if (!token) return;
       let noteToSend = { ...newNote };
       if (!noteToSend.reminder) {
@@ -90,6 +109,16 @@ const Reminders = () => {
         });
       }
       if (!response.ok) throw new Error(editingNote ? 'Failed to update Note' : 'Failed to create Note');
+      
+      // Show success message with special notification for reminders
+      if (noteToSend.reminder) {
+        alert(editingNote 
+          ? '✅ Note updated successfully! Reminder has been set and the note is visible in the Reminders section.' 
+          : '✅ Note added successfully! Your reminder has been set and the note is now visible in the Reminders section.');
+      } else {
+        alert(editingNote ? '✅ Note updated successfully!' : '✅ Note added successfully!');
+      }
+      
       setNewNote({
         title: '',
         content: '',
@@ -104,12 +133,13 @@ const Reminders = () => {
       fetchNotes();
     } catch (error) {
       console.error(editingNote ? 'Error updating Note:' : 'Error creating Note:', error);
+      alert('❌ Failed to save note. Please try again.');
     }
   };
 
   const handlePin = async (id) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = await getToken();
       if (!token) return;
       await fetch(`/api/notes/${id}/toggle-pin`, {
         method: 'PATCH',
@@ -124,7 +154,7 @@ const Reminders = () => {
 
   const handleTrash = async (id) => {
     try {
-      const token = localStorage.getItem('token');
+      const token = await getToken();
       if (!token) return;
       await fetch(`/api/notes/${id}/trash`, {
         method: 'PATCH',
@@ -142,9 +172,21 @@ const Reminders = () => {
       <h2 className='notes-reminders'>Reminders</h2>
       <NotesList
         notes={notes.filter(note => {
-          if (!note.reminder || note.archived || note.trashed) return false;
+          console.log('Checking note:', { 
+            id: note._id, 
+            title: note.title, 
+            reminder: note.reminder, 
+            archived: note.archived, 
+            trashed: note.trashed 
+          });
+          if (!note.reminder || note.archived || note.trashed) {
+            console.log('Note filtered out - no reminder or archived/trashed');
+            return false;
+          }
           const reminderDate = new Date(note.reminder);
-          return !isNaN(reminderDate.getTime());
+          const isValid = !isNaN(reminderDate.getTime());
+          console.log('Reminder date valid?', isValid, reminderDate);
+          return isValid;
         })}
         loading={loading}
         onPin={handlePin}

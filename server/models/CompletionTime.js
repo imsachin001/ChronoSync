@@ -29,7 +29,7 @@ const completionTimeSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Create compound index to ensure one record per task
+//index to ensure one record per task
 completionTimeSchema.index({ user: 1, taskId: 1 }, { unique: true });
 
 const CompletionTime = mongoose.model('CompletionTime', completionTimeSchema);

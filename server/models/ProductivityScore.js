@@ -47,7 +47,7 @@ const productivityScoreSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Create compound index to ensure one record per user per week
+//index to ensure one record per user per week
 productivityScoreSchema.index({ user: 1, weekStart: 1 }, { unique: true });
 
 const ProductivityScore = mongoose.model('ProductivityScore', productivityScoreSchema);

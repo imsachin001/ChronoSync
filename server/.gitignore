@@ -16,6 +16,11 @@
 secrets.json
 config.local.js
 
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
 # Logs
 logs
 *.log
@@ -30,22 +35,12 @@ node_modules
 .pnp
 .pnp.js
 
-# Build outputs
-dist
-dist-ssr
-build
-.next
-out
-.nuxt
-.cache
-
 # Testing
 coverage
 *.lcov
 .nyc_output
 
 # Temp files
-*.local
 *.tmp
 *.temp
 .temp

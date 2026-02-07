@@ -25,7 +25,7 @@ const completionStreakSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Create index to ensure one record per user
+//index to ensure one record per user
 completionStreakSchema.index({ user: 1 }, { unique: true });
 
 const CompletionStreak = mongoose.model('CompletionStreak', completionStreakSchema);

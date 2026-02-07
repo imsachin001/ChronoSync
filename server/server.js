@@ -4,6 +4,7 @@ import cors from "cors";
 import taskRoutes from "./routes/taskRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import noteRoutes from "./routes/noteRoutes.js";
+import aiRoutes from "./routes/aiRoutes.js";
 import { clerkAuth } from "./middleware/clerkAuth.js";
 import dotenv from 'dotenv';
 
@@ -44,6 +45,9 @@ app.use('/api/chats', clerkAuth, chatRoutes);
 
 // Use notes routes with Clerk auth
 app.use('/api/notes', clerkAuth, noteRoutes);
+
+// Use AI routes with Clerk auth
+app.use('/api/ai', clerkAuth, aiRoutes);
 
 // Add server health check
 app.get('/api/status', (req, res) => {

@@ -45,7 +45,7 @@ const NotesForm = ({ show, onClose, onInputChange, onSave, newNote }) => {
             className="note-reminder-input"
             name="reminder"
             type="datetime-local"
-            value={newNote.reminder ? newNote.reminder.slice(0, 16) : ''}
+            value={newNote.reminder ? (typeof newNote.reminder === 'string' ? newNote.reminder.slice(0, 16) : new Date(newNote.reminder).toISOString().slice(0, 16)) : ''}
             onChange={onInputChange}
           />
           {/* <textarea

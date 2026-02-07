@@ -61,6 +61,7 @@ export const createApi = (getToken) => ({
   getTaskStats: () => makeAuthenticatedRequest('/api/tasks/stats', {}, getToken),
   getProductivityScore: () => makeAuthenticatedRequest('/api/tasks/productivity-score', {}, getToken),
   getBadges: () => makeAuthenticatedRequest('/api/tasks/badges', {}, getToken),
+  getCompletionStreak: () => makeAuthenticatedRequest('/api/tasks/completion-streak', {}, getToken),
 
   // Notes
   getNotes: () => makeAuthenticatedRequest('/api/notes', {}, getToken),

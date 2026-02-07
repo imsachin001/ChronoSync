@@ -24,7 +24,10 @@ export const getOrCreateCompletionStreak = async (userId) => {
 // Update completion streak when a task is completed
 export const updateCompletionStreak = async (userId, task, wasCompleted) => {
   try {
+    console.log(`Updating streak for user ${userId}, task completed: ${wasCompleted}`);
     const streak = await getOrCreateCompletionStreak(userId);
+    console.log('Current streak before update:', streak);
+    
     const today = new Date();
     today.setHours(0, 0, 0, 0); // Start of today
     
@@ -33,12 +36,16 @@ export const updateCompletionStreak = async (userId, task, wasCompleted) => {
       const completionDate = new Date(task.completedAt);
       completionDate.setHours(0, 0, 0, 0); // Start of completion day
       
+      console.log('Completion date:', completionDate);
+      
       // Check if this date is already recorded
       const dateExists = streak.completedDates.some(date => {
         const existingDate = new Date(date);
         existingDate.setHours(0, 0, 0, 0);
         return existingDate.getTime() === completionDate.getTime();
       });
+      
+      console.log('Date already exists in streak:', dateExists);
       
       if (!dateExists) {
         streak.completedDates.push(completionDate);
@@ -48,6 +55,8 @@ export const updateCompletionStreak = async (userId, task, wasCompleted) => {
         const sortedDates = streak.completedDates
           .map(date => new Date(date))
           .sort((a, b) => b - a); // Sort descending (most recent first)
+        
+        console.log('Sorted dates:', sortedDates);
         
         let currentStreak = 0;
         let checkDate = today;
@@ -71,11 +80,13 @@ export const updateCompletionStreak = async (userId, task, wasCompleted) => {
         streak.longestStreak = Math.max(streak.longestStreak, currentStreak);
         
         await streak.save();
-        console.log(`Updated completion streak: ${currentStreak} days`);
+        console.log(`Updated completion streak: ${currentStreak} days (longest: ${streak.longestStreak})`);
         
         // Update streak badge
         const badgeResult = await updateStreakBadge(userId, currentStreak);
         return badgeResult.newlyEarnedBadge;
+      } else {
+        console.log('Date already recorded, no streak update needed');
       }
     } else {
       // Task was uncompleted - we don't remove from streak as it's historical data
@@ -152,13 +163,49 @@ export const calculateAverageCompletionTime = async (userId) => {
 // Get completion streak data
 export const getCompletionStreakData = async (userId) => {
   try {
+    console.log('Getting streak data for user:', userId);
     const streak = await getOrCreateCompletionStreak(userId);
-    return {
+    console.log('Found streak record:', streak);
+    
+    // Get task completion counts per day for heatmap
+    const completedTasks = await Task.find({
+      user: userId,
+      completed: true,
+      completedAt: { $exists: true }
+    }).select('completedAt');
+    
+    console.log(`Found ${completedTasks.length} completed tasks`);
+    
+    // Group tasks by date
+    const dateMap = new Map();
+    completedTasks.forEach(task => {
+      const date = new Date(task.completedAt);
+      date.setHours(0, 0, 0, 0);
+      const dateKey = date.toISOString().split('T')[0];
+      dateMap.set(dateKey, (dateMap.get(dateKey) || 0) + 1);
+    });
+    
+    console.log('Date map entries:', dateMap.size);
+    
+    // Convert to array format
+    const activityData = Array.from(dateMap.entries()).map(([date, count]) => ({
+      date,
+      count
+    }));
+    
+    console.log('Activity data:', activityData);
+    
+    const result = {
       currentStreak: streak.currentStreak,
-      longestStreak: streak.longestStreak
+      longestStreak: streak.longestStreak,
+      completedDates: streak.completedDates,
+      activityData
     };
+    
+    console.log('Returning streak data:', result);
+    return result;
   } catch (error) {
     console.error('Error getting completion streak data:', error);
-    return { currentStreak: 0, longestStreak: 0 };
+    return { currentStreak: 0, longestStreak: 0, completedDates: [], activityData: [] };
   }
 }; 

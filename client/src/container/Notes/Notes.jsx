@@ -62,13 +62,28 @@ const Notes = () => {
 
   const handleEditNote = (note) => {
     setEditingNote(note);
+    // Format reminder for datetime-local input
+    let formattedReminder = null;
+    if (note.reminder) {
+      try {
+        const reminderDate = new Date(note.reminder);
+        if (!isNaN(reminderDate.getTime())) {
+          // Convert to local datetime string format (YYYY-MM-DDTHH:mm)
+          formattedReminder = new Date(reminderDate.getTime() - reminderDate.getTimezoneOffset() * 60000)
+            .toISOString()
+            .slice(0, 16);
+        }
+      } catch (e) {
+        console.error('Error formatting reminder:', e);
+      }
+    }
     setNewNote({
       title: note.title || '',
       content: note.content || '',
       pinned: note.pinned || false,
       archived: note.archived || false,
       trashed: note.trashed || false,
-      reminder: note.reminder || null,
+      reminder: formattedReminder,
     });
     setShowNoteForm(true);
   };
@@ -105,6 +120,16 @@ const Notes = () => {
         });
       }
       if (!response.ok) throw new Error(editingNote ? 'Failed to update Note' : 'Failed to create Note');
+      
+      // Show success message with special notification for reminders
+      if (noteToSend.reminder) {
+        alert(editingNote 
+          ? '✅ Note updated successfully! Reminder has been set and will appear in the Reminders section.' 
+          : '✅ Note added successfully! Your reminder has been set and the note will appear in the Reminders section.');
+      } else {
+        alert(editingNote ? '✅ Note updated successfully!' : '✅ Note added successfully!');
+      }
+      
       setNewNote({
         title: '',
         content: '',
@@ -119,6 +144,7 @@ const Notes = () => {
       fetchNotes();
     } catch (error) {
       console.error(editingNote ? 'Error updating Note:' : 'Error creating Note:', error);
+      alert('❌ Failed to save note. Please try again.');
     }
   };
 

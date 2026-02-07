@@ -83,10 +83,10 @@ const badgeSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Create index to ensure one record per user
+//index to ensure one record per user
 badgeSchema.index({ user: 1 }, { unique: true });
 
-// Badge milestones configuration
+// Badge milestones 
 badgeSchema.statics.BADGE_MILESTONES = [
   { level: 1, milestone: 5, name: 'Task Initiate', emoji: '🐣' },
   { level: 2, milestone: 10, name: 'Getting Things Done', emoji: '📌' },
@@ -98,7 +98,7 @@ badgeSchema.statics.BADGE_MILESTONES = [
   { level: 8, milestone: 1000, name: 'Mythical Pull', emoji: '🌟' }
 ];
 
-// Streak milestones configuration
+// Streak milestones
 badgeSchema.statics.STREAK_MILESTONES = [
   { level: 1, milestone: 7, name: 'Focus Streak', emoji: '🔥' },
   { level: 2, milestone: 30, name: 'Momentum Builder', emoji: '⚡' },
