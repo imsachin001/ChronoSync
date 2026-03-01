@@ -13,12 +13,18 @@ const Profile = () => {
   const [profession, setProfession] = useState('Student') // Default profession
   const [isEditingProfession, setIsEditingProfession] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [badgeData, setBadgeData] = useState(null)
+  const [badgeLoading, setBadgeLoading] = useState(true)
   const fileInputRef = useRef(null)
 
   useEffect(() => {
     fetchStreakData()
+    fetchBadgeData()
     // Auto-refresh every 5 seconds to catch updates
-    const interval = setInterval(fetchStreakData, 5000)
+    const interval = setInterval(() => {
+      fetchStreakData()
+      fetchBadgeData()
+    }, 5000)
     return () => clearInterval(interval)
   }, [])
 
@@ -31,6 +37,18 @@ const Profile = () => {
     } catch (error) {
       console.error('Error fetching streak data:', error)
       setLoading(false)
+    }
+  }
+
+  const fetchBadgeData = async () => {
+    try {
+      const api = createApi(getToken)
+      const data = await api.getBadges()
+      setBadgeData(data)
+      setBadgeLoading(false)
+    } catch (error) {
+      console.error('Error fetching badge data:', error)
+      setBadgeLoading(false)
     }
   }
 
@@ -61,6 +79,27 @@ const Profile = () => {
 
   const currentStreak = streakData?.currentStreak || 0
   const stageInfo = getStageInfo(currentStreak)
+
+  // Function to get badge card gradient based on type and level
+  const getBadgeGradient = (type, level) => {
+    const gradients = {
+      task: [
+        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', // Level 1-2
+        'linear-gradient(135deg, #4F46E5 0%, #6366F1 100%)', // Level 3-4
+        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)', // Level 5-6
+        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)', // Level 7+
+      ],
+      streak: [
+        'linear-gradient(135deg, #F59E0B 0%, #F97316 100%)', // Level 1-2
+        'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)', // Level 3-4
+        'linear-gradient(135deg, #EC4899 0%, #DB2777 100%)', // Level 5-6
+        'linear-gradient(135deg, #8B5CF6 0%, #7C3AED 100%)', // Level 7+
+      ]
+    };
+    
+    const gradientIndex = Math.min(Math.floor((level - 1) / 2), 3);
+    return gradients[type]?.[gradientIndex] || gradients.task[0];
+  }
 
   return (
     <div className='profile-page'>
@@ -147,6 +186,53 @@ const Profile = () => {
               ) : (
                 <p style={{ textAlign: 'center', color: '#9CA3AF' }}>
                   No activity yet. Complete some tasks to see your activity heatmap!
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Badges Section */}
+          <div className='profile-badges-section'>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h3>Achieved Badges</h3>
+              <span className='badge-count'>
+                {badgeData?.badgesEarned?.length || 0} {badgeData?.badgesEarned?.length === 1 ? 'Badge' : 'Badges'}
+              </span>
+            </div>
+            <div className='badges-grid'>
+              {badgeLoading ? (
+                <p>Loading badges...</p>
+              ) : badgeData?.badgesEarned && badgeData.badgesEarned.length > 0 ? (
+                // Display all earned badges sorted by date (newest first)
+                [...badgeData.badgesEarned]
+                  .sort((a, b) => new Date(b.earnedAt) - new Date(a.earnedAt))
+                  .map((badge, index) => (
+                    <div 
+                      key={`${badge.type}-${badge.level}-${index}`} 
+                      className='badge-card'
+                      style={{ background: getBadgeGradient(badge.type, badge.level) }}
+                    >
+                      <div className='badge-card-icon'>{badge.emoji}</div>
+                      <div className='badge-card-info'>
+                        <h4 className='badge-card-name'>{badge.name}</h4>
+                        <p className='badge-card-desc'>
+                          {badge.type === 'task' ? 'Task Completion' : 'Daily Streak'} • Level {badge.level}
+                        </p>
+                        <div className='badge-card-stats'>
+                          <span className='badge-earned-date'>
+                            Earned {new Date(badge.earnedAt).toLocaleDateString('en-US', {
+                              month: 'short',
+                              day: 'numeric',
+                              year: 'numeric'
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+              ) : (
+                <p style={{ textAlign: 'center', color: '#9CA3AF', gridColumn: '1 / -1' }}>
+                  Complete tasks and build streaks to earn badges! 🎯
                 </p>
               )}
             </div>

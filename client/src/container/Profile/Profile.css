@@ -93,10 +93,10 @@
 }
 
 .profile-username {
-    font-size: 1.8rem;
-    font-weight: 700;
+    font-size: 1.6rem;
+    font-weight: 500;
     margin: 0;
-    color: var(--text-primary, #1F2937);
+    color: var(--text-primary, #494a4d);
 }
 
 .profile-profession {
@@ -207,7 +207,7 @@
     justify-content: center;
     font-size: 3rem;
     font-weight: 800;
-    color: var(--text-primary, #1F2937);
+    color: var(--text-primary, #2e5791);
 }
 
 .stage-info {
@@ -323,6 +323,253 @@
     color: var(--text-secondary, #9CA3AF);
 }
 
+/* Badges Section */
+.profile-badges-section {
+    background: var(--card-bg, #FFFFFF);
+    border-radius: 16px;
+    padding: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    border: 1px solid var(--border-light, #E5E7EB);
+}
+
+.profile-badges-section h3 {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: var(--text-primary, #494a4d);
+    margin: 0;
+}
+
+.badge-count {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--primary-color, #4F46E5);
+    background: rgba(79, 70, 229, 0.1);
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+}
+
+.badges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.badge-card {
+    background: linear-gradient(135deg, var(--primary-color, #4F46E5) 0%, #6366F1 100%);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.badge-card::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+    transition: all 0.6s ease;
+}
+
+.badge-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 24px rgba(79, 70, 229, 0.25);
+}
+
+.badge-card:hover::before {
+    top: -60%;
+    right: -60%;
+}
+
+.badge-card-icon {
+    font-size: 4rem;
+    line-height: 1;
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.1));
+    animation: floatBadge 3s ease-in-out infinite;
+}
+
+@keyframes floatBadge {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+}
+
+.badge-card-info {
+    text-align: center;
+    width: 100%;
+    z-index: 1;
+}
+
+.badge-card-name {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: white;
+    margin: 0 0 0.5rem 0;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.badge-card-desc {
+    font-size: 0.9rem;
+    color: rgba(255, 255, 255, 0.9);
+    margin: 0 0 1rem 0;
+    font-weight: 500;
+}
+
+.badge-card-stats {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.75rem 1rem;
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    width: 100%;
+}
+
+.badge-stat-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: white;
+    line-height: 1;
+}
+
+.badge-stat-label {
+    font-size: 0.85rem;
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+}
+
+.badge-earned-date {
+    font-size: 0.875rem;
+    color: rgba(255, 255, 255, 0.95);
+    font-weight: 500;
+    text-align: center;
+}
+
+/* Dark Mode Styles */
+[data-theme="dark"] .profile-page {
+    background-color: #0a0a0a;
+}
+
+[data-theme="dark"] .profile-username,
+[data-theme="dark"] .profile-profession,
+[data-theme="dark"] .profile-email {
+    color: #e5e7eb;
+}
+
+[data-theme="dark"] .info-label {
+    color: #9CA3AF;
+}
+
+[data-theme="dark"] .profile-profession:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+[data-theme="dark"] .profession-input {
+    background: #1f2937;
+    color: #e5e7eb;
+    border-color: #6366F1;
+}
+
+[data-theme="dark"] .heatmap-placeholder {
+    background: #1a1a1a;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid #2a2a2a;
+}
+
+[data-theme="dark"] .heatmap-placeholder h3 {
+    color: #e5e7eb;
+}
+
+[data-theme="dark"] .heatmap-content {
+    background: #0f0f0f;
+    border: 1px solid #2a2a2a;
+}
+
+[data-theme="dark"] .heatmap-content p {
+    color: #65686e;
+}
+
+[data-theme="dark"] .stage-container {
+    background: #100f0f;
+    box-shadow: 0 4px 6px rgba(33, 33, 33, 0.3);
+    border: 1px solid #393737;
+}
+
+[data-theme="dark"] .stage-label {
+    color: #9CA3AF;
+}
+
+[data-theme="dark"] .streak-details {
+    background: #141414;
+    border: 1px solid #2a2a2a;
+}
+
+[data-theme="dark"] .streak-label {
+    color: #9CA3AF;
+}
+
+[data-theme="dark"] .streak-value {
+    color: #d0e645;
+}
+
+[data-theme="dark"] .stage-progress {
+    background: #1a1a1a;
+    border: 1px solid #2a2a2a;
+}
+
+[data-theme="dark"] .stage-progress h4 {
+    color: #e5e7eb;
+}
+
+[data-theme="dark"] .stage-dot {
+    background: #2a2a2a;
+    color: #6B7280;
+    border: 2px solid #3a3a3a;
+}
+
+[data-theme="dark"] .stage-dot.active {
+    border-color: transparent;
+}
+
+[data-theme="dark"] .stage-milestones span {
+    color: #6B7280;
+}
+
+[data-theme="dark"] .profile-badges-section {
+    background: #1a1a1a;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+    border: 1px solid #2a2a2a;
+}
+
+[data-theme="dark"] .profile-badges-section h3 {
+    color: #e5e7eb;
+}
+
+[data-theme="dark"] .badge-count {
+    background: rgba(99, 102, 241, 0.15);
+    color: #818CF8;
+}
+
+[data-theme="dark"] .refresh-button {
+    background: #4F46E5;
+}
+
+[data-theme="dark"] .refresh-button:hover:not(:disabled) {
+    background: #6366F1;
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .profile-container {
@@ -355,6 +602,14 @@
     
     .info-label {
         min-width: auto;
+    }
+
+    .badges-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .profile-badges-section {
+        padding: 1.5rem;
     }
 }
 

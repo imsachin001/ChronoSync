@@ -369,6 +369,11 @@ router.get('/productivity-insights', verifyTokenMiddleware, async (req, res) => 
       completedTasksThisWeek = createdThisWeek.filter(task => task.completed).length;
     }
     
+    // Ensure completed tasks never exceeds total tasks (handle data inconsistencies)
+    if (completedTasksThisWeek > totalTasksThisWeek) {
+      totalTasksThisWeek = completedTasksThisWeek;
+    }
+    
     // Calculate most productive day from dailyStats
     const dayCounts = {};
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -434,8 +439,9 @@ router.get('/productivity-insights', verifyTokenMiddleware, async (req, res) => 
     }
     
     // Calculate weekly completion percentage using historical data
+    // Cap at 100% to handle any data inconsistencies
     const completionPercentage = totalTasksThisWeek > 0 
-      ? Math.round((completedTasksThisWeek / totalTasksThisWeek) * 100)
+      ? Math.min(100, Math.round((completedTasksThisWeek / totalTasksThisWeek) * 100))
       : 0;
     
     const insights = {
@@ -508,6 +514,8 @@ router.patch('/:id/toggle', verifyTokenMiddleware, async (req, res) => {
     // Set completion time when task is completed
     if (wasCompleted) {
       task.completedAt = new Date();
+      // Reset overdue notification flag when task is completed
+      task.overdueNotificationSent = false;
     } else {
       task.completedAt = null; // Clear completion time when uncompleted
     }

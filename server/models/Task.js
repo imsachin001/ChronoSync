@@ -46,6 +46,14 @@ const taskSchema = new mongoose.Schema({
   user: {
     type: String,
     required: true
+  },
+  overdueNotificationSent: {
+    type: Boolean,
+    default: false
+  },
+  lastNotificationSent: {
+    type: Date,
+    default: null
   }
 }, {
   timestamps: true

@@ -31,6 +31,10 @@ const noteSchema = new mongoose.Schema({
         type: Date,
         default: null
     },
+    reminderNotificationSent: {
+        type: Boolean,
+        default: false
+    },
     createdAt: {
         type: Date,
         default: Date.now

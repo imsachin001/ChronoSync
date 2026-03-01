@@ -111,6 +111,42 @@
     color: var(--text-secondary, #6B7280);
 }
 
+/* Dark Mode Styles */
+[data-theme="dark"] .heatmap-day-label,
+[data-theme="dark"] .heatmap-month-label,
+[data-theme="dark"] .legend-label {
+    color: #9CA3AF;
+}
+
+[data-theme="dark"] .heatmap-container .heatmap-square.level-0 {
+    background-color: #161B22 !important;
+    border: 1px solid #2a2a2a !important;
+}
+
+[data-theme="dark"] .heatmap-container .heatmap-square.level-1 {
+    background-color: #0E4429 !important;
+    border: none !important;
+}
+
+[data-theme="dark"] .heatmap-container .heatmap-square.level-2 {
+    background-color: #006D32 !important;
+    border: none !important;
+}
+
+[data-theme="dark"] .heatmap-container .heatmap-square.level-3 {
+    background-color: #26A641 !important;
+    border: none !important;
+}
+
+[data-theme="dark"] .heatmap-container .heatmap-square.level-4 {
+    background-color: #39D353 !important;
+    border: none !important;
+}
+
+[data-theme="dark"] .heatmap-square:hover {
+    border: 1px solid #6B7280 !important;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .heatmap-wrapper {

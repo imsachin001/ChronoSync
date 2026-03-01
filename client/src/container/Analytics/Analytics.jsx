@@ -317,7 +317,7 @@ const Analytics = () => {
           <div className="productivity-chart-container">
             <h2 className="chart-title">Productivity Score</h2>
             <div className="chart-wrapper">
-              <ResponsiveContainer width="100%" height={360}>
+              <ResponsiveContainer width="100%" height={380}>
                 <LineChart data={productivityData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#4a5568' : '#e2e8f0'} />
                   <XAxis 
@@ -363,7 +363,7 @@ const Analytics = () => {
           <div className="week-comparison-chart-container">
             <h2 className="chart-title">Week-over-Week Comparison</h2>
             <div className="chart-wrapper">
-              <ResponsiveContainer width="100%" height={300}>
+              <ResponsiveContainer width="100%" height={340}>
                 <BarChart data={weekOverWeekData}>
                   <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#4a5568' : '#e2e8f0'} />
                   <XAxis 
@@ -397,7 +397,7 @@ const Analytics = () => {
             <h2 className="chart-title">Tasks by Category</h2>
             <div className="chart-wrapper">
               {categoryData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={300}>
+                <ResponsiveContainer width="100%" height={340}>
                   <PieChart>
                     <Pie
                       data={categoryData}
@@ -405,7 +405,7 @@ const Analytics = () => {
                       nameKey="name"
                       cx="50%"
                       cy="50%"
-                      outerRadius={100}
+                      outerRadius={110}
                       label={({ name, value }) => `${name}: ${value}`}
                     >
                       {categoryData.map((entry, idx) => (
@@ -421,7 +421,7 @@ const Analytics = () => {
                   display: 'flex', 
                   alignItems: 'center', 
                   justifyContent: 'center', 
-                  height: '300px',
+                  height: '340px',
                   color: theme === 'dark' ? '#a0aec0' : '#64748b',
                   fontSize: '16px'
                 }}>

@@ -5,8 +5,11 @@ import taskRoutes from "./routes/taskRoutes.js";
 import chatRoutes from "./routes/chatRoutes.js";
 import noteRoutes from "./routes/noteRoutes.js";
 import aiRoutes from "./routes/aiRoutes.js";
+import notificationRoutes from "./routes/notificationRoutes.js";
 import { clerkAuth } from "./middleware/clerkAuth.js";
 import dotenv from 'dotenv';
+import { initializeSchedulers } from "./utils/notificationScheduler.js";
+import { testEmailConfiguration } from "./utils/notificationService.js";
 
 // Load environment variables
 dotenv.config();
@@ -24,6 +27,12 @@ app.use(cors({
 mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/chronosyncDB")
 .then(() => {
   console.log("MongoDB connected successfully!");
+  
+  // Initialize notification schedulers after DB connection
+  initializeSchedulers();
+  
+  // Test email configuration
+  testEmailConfiguration();
 })
 .catch((err) => {
   console.error("MongoDB connection error:", err);
@@ -48,6 +57,9 @@ app.use('/api/notes', clerkAuth, noteRoutes);
 
 // Use AI routes with Clerk auth
 app.use('/api/ai', clerkAuth, aiRoutes);
+
+// Use notification routes with Clerk auth
+app.use('/api/notifications', clerkAuth, notificationRoutes);
 
 // Add server health check
 app.get('/api/status', (req, res) => {

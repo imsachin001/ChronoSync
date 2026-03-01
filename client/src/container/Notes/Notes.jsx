@@ -142,6 +142,8 @@ const Notes = () => {
       setShowNoteForm(false);
       setEditingNote(null);
       fetchNotes();
+      // Dispatch event to update notifications in Navbar
+      window.dispatchEvent(new Event('noteUpdate'));
     } catch (error) {
       console.error(editingNote ? 'Error updating Note:' : 'Error creating Note:', error);
       alert('❌ Failed to save note. Please try again.');
@@ -203,6 +205,8 @@ const Notes = () => {
         credentials: 'include',
       });
       fetchNotes();
+      // Dispatch event to update notifications in Navbar
+      window.dispatchEvent(new Event('noteUpdate'));
     } catch (error) {
       console.error('Error trashing note:', error);
     }
@@ -218,6 +222,8 @@ const Notes = () => {
         credentials: 'include',
       });
       fetchNotes();
+      // Dispatch event to update notifications in Navbar
+      window.dispatchEvent(new Event('noteUpdate'));
     } catch (error) {
       console.error('Error deleting note:', error);
     }

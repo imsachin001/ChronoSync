@@ -102,9 +102,12 @@ router.patch('/:id', verifyTokenMiddleware, async (req, res) => {
     const updateData = { ...req.body, updatedAt: new Date() };
     if (updateData.reminder) {
       updateData.reminder = new Date(updateData.reminder);
+      // Reset notification flag when reminder is updated
+      updateData.reminderNotificationSent = false;
     }
     if (updateData.reminder === '' || updateData.reminder === null) {
       updateData.reminder = null;
+      updateData.reminderNotificationSent = false;
     }
     const note = await Note.findOneAndUpdate(
       { _id: req.params.id, user: req.userId },

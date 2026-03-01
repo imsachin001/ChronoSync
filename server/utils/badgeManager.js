@@ -66,14 +66,21 @@ export const updateBadgeOnTaskComplete = async (userId, wasCompleted) => {
         badge.taskCompletionBadge.badgeName = highestReachedTaskMilestone.name;
         badge.taskCompletionBadge.badgeEmoji = highestReachedTaskMilestone.emoji;
         
-        // Add to earned badges
-        badge.badgesEarned.push({
-          name: highestReachedTaskMilestone.name,
-          emoji: highestReachedTaskMilestone.emoji,
-          level: highestReachedTaskMilestone.level,
-          type: 'task',
-          earnedAt: new Date()
-        });
+        // Check if badge already exists in badgesEarned to prevent duplicates
+        const badgeExists = badge.badgesEarned.some(
+          b => b.type === 'task' && b.level === highestReachedTaskMilestone.level
+        );
+        
+        // Add to earned badges only if it doesn't exist
+        if (!badgeExists) {
+          badge.badgesEarned.push({
+            name: highestReachedTaskMilestone.name,
+            emoji: highestReachedTaskMilestone.emoji,
+            level: highestReachedTaskMilestone.level,
+            type: 'task',
+            earnedAt: new Date()
+          });
+        }
         
         // Set newly earned badge for notification
         newlyEarnedBadge = {
@@ -134,14 +141,21 @@ export const updateStreakBadge = async (userId, currentStreak) => {
       badge.streakBadge.badgeName = currentStreakMilestone.name;
       badge.streakBadge.badgeEmoji = currentStreakMilestone.emoji;
       
-      // Add to earned badges
-      badge.badgesEarned.push({
-        name: currentStreakMilestone.name,
-        emoji: currentStreakMilestone.emoji,
-        level: currentStreakMilestone.level,
-        type: 'streak',
-        earnedAt: new Date()
-      });
+      // Check if badge already exists in badgesEarned to prevent duplicates
+      const badgeExists = badge.badgesEarned.some(
+        b => b.type === 'streak' && b.level === currentStreakMilestone.level
+      );
+      
+      // Add to earned badges only if it doesn't exist
+      if (!badgeExists) {
+        badge.badgesEarned.push({
+          name: currentStreakMilestone.name,
+          emoji: currentStreakMilestone.emoji,
+          level: currentStreakMilestone.level,
+          type: 'streak',
+          earnedAt: new Date()
+        });
+      }
       
       // Set newly earned badge for notification
       newlyEarnedBadge = {
