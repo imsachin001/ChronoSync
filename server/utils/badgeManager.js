@@ -1,4 +1,5 @@
 import Badge from '../models/Badge.js';
+import CompletionStreak from '../models/CompletionStreak.js';
 
 // Get or create badge record for user
 export const getOrCreateBadge = async (userId) => {
@@ -223,6 +224,46 @@ export const updateStreakBadge = async (userId, currentStreak) => {
 export const getBadgeData = async (userId) => {
   try {
     const badge = await getOrCreateBadge(userId);
+    
+    // Recalculate current streak to ensure badge is up-to-date
+    const streakRecord = await CompletionStreak.findOne({ user: userId });
+    if (streakRecord && streakRecord.completedDates && streakRecord.completedDates.length > 0) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      let currentStreak = 0;
+      const sortedDates = streakRecord.completedDates
+        .map(date => new Date(date))
+        .sort((a, b) => b - a);
+      
+      let checkDate = today;
+      
+      for (let i = 0; i < sortedDates.length; i++) {
+        const completedDate = new Date(sortedDates[i]);
+        completedDate.setHours(0, 0, 0, 0);
+        
+        const diffTime = checkDate.getTime() - completedDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays <= 1) {
+          currentStreak++;
+          checkDate = completedDate;
+        } else {
+          break;
+        }
+      }
+      
+      // Update badge if streak has changed
+      if (currentStreak !== badge.currentStreak) {
+        await updateStreakBadge(userId, currentStreak);
+        // Reload badge with updated data
+        const updatedBadge = await Badge.findOne({ user: userId });
+        if (updatedBadge) {
+          Object.assign(badge, updatedBadge.toObject());
+        }
+      }
+    }
+    
     const taskMilestones = Badge.BADGE_MILESTONES;
     const streakMilestones = Badge.STREAK_MILESTONES;
     

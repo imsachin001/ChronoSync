@@ -167,6 +167,48 @@ export const getCompletionStreakData = async (userId) => {
     const streak = await getOrCreateCompletionStreak(userId);
     console.log('Found streak record:', streak);
     
+    // Recalculate current streak to check if it should be reset
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let currentStreak = 0;
+    
+    if (streak.completedDates && streak.completedDates.length > 0) {
+      // Sort dates descending (most recent first)
+      const sortedDates = streak.completedDates
+        .map(date => new Date(date))
+        .sort((a, b) => b - a);
+      
+      let checkDate = today;
+      
+      for (let i = 0; i < sortedDates.length; i++) {
+        const completedDate = new Date(sortedDates[i]);
+        completedDate.setHours(0, 0, 0, 0);
+        
+        const diffTime = checkDate.getTime() - completedDate.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        
+        if (diffDays <= 1) {
+          currentStreak++;
+          checkDate = completedDate;
+        } else {
+          break;
+        }
+      }
+    }
+    
+    // Update current streak if it changed (streak broken)
+    if (currentStreak !== streak.currentStreak) {
+      streak.currentStreak = currentStreak;
+      // Longest streak should always be the maximum ever achieved
+      streak.longestStreak = Math.max(streak.longestStreak, currentStreak);
+      await streak.save();
+      console.log(`Streak updated: current=${currentStreak}, longest=${streak.longestStreak}`);
+      
+      // Update streak badge to reflect the new current streak
+      await updateStreakBadge(userId, currentStreak);
+    }
+    
     // Get task completion counts per day for heatmap
     const completedTasks = await Task.find({
       user: userId,
@@ -196,7 +238,7 @@ export const getCompletionStreakData = async (userId) => {
     console.log('Activity data:', activityData);
     
     const result = {
-      currentStreak: streak.currentStreak,
+      currentStreak: currentStreak,
       longestStreak: streak.longestStreak,
       completedDates: streak.completedDates,
       activityData
