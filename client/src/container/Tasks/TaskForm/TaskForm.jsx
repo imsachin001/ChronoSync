@@ -75,8 +75,10 @@ const TaskForm = ({ onTaskAdded, onClose, newTask, setNewTask, handleAddTask }) 
       }
 
       const data = await response.json();
+      
+      // Wait for parent to update before closing
       if (typeof onTaskAdded === 'function') {
-        onTaskAdded(data);
+        await onTaskAdded(data);
       }
       
       // Reset form

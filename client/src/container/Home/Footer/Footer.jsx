@@ -1,5 +1,5 @@
 import React from 'react';
-import { FiFacebook, FiTwitter, FiInstagram, FiLinkedin } from 'react-icons/fi';
+import { FiGithub, FiInstagram, FiLinkedin } from 'react-icons/fi';
 
 const Footer = () => {
   return (
@@ -13,16 +13,21 @@ const Footer = () => {
         <div className="footer-section">
           <h4>Connect</h4>
           <div className="social-icons">
-            <FiFacebook />
-            <FiTwitter />
-            <FiInstagram />
-            <FiLinkedin />
+            <a href="https://www.instagram.com/jsoneh1t/" target="_blank" rel="noopener noreferrer" aria-label="Instagram">
+              <FiInstagram />
+            </a>
+            <a href="https://github.com/imsachin001" target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+              <FiGithub />
+            </a>
+            <a href="https://www.linkedin.com/in/sachin-jangid-18954b289/" target="_blank" rel="noopener noreferrer" aria-label="LinkedIn">
+              <FiLinkedin />
+            </a>
           </div>
         </div>
       </div>
 
       <div className="footer-bottom">
-        <p>© 2024 ChronoSync. All rights reserved</p>
+        <p>© {new Date().getFullYear()} ChronoSync. All rights reserved</p>
         <div className="legal-links">
           <a href="/privacy">Privacy Policy</a>
           <a href="/terms">Terms of Service</a>

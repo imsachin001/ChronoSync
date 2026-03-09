@@ -3,7 +3,6 @@ import Header from './Header/Header';
 import Features from './Features/Features';
 import Middle from './Middle/Middle';
 import Footer from './Footer/Footer';
-import AuthTest from '../../components/AuthTest';
 import './Home.css';
 
 const Home = () => {
@@ -13,7 +12,6 @@ const Home = () => {
       <Features />
       <Middle />
       <Footer />
-      <AuthTest />
     </div>
   );
 };

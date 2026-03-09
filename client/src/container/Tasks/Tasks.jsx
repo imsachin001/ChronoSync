@@ -113,9 +113,11 @@ const Tasks = () => {
     }
   };
 
-  const handleTaskAdded = () => {
+  const handleTaskAdded = async () => {
+    await fetchTasks();
+    // Dispatch event to notify TaskList and other components
+    window.dispatchEvent(new CustomEvent('taskUpdate'));
     setShowTaskForm(false);
-    fetchTasks();
   };
 
   const handleAiSchedule = () => {

@@ -20,6 +20,19 @@ const TaskList = ({ searchQuery, selectedFilter, selectedPriority, onTaskUpdate 
     }
   }, [isSignedIn]);
 
+  // Listen for task updates from other components
+  useEffect(() => {
+    const handleTaskUpdate = () => {
+      fetchTasks();
+    };
+
+    window.addEventListener('taskUpdate', handleTaskUpdate);
+    
+    return () => {
+      window.removeEventListener('taskUpdate', handleTaskUpdate);
+    };
+  }, [isSignedIn]);
+
   useEffect(() => {
     filterTasks();
   }, [tasks, searchQuery, selectedFilter, selectedPriority]);
@@ -104,6 +117,9 @@ const TaskList = ({ searchQuery, selectedFilter, selectedPriority, onTaskUpdate 
       if (onTaskUpdate) {
         onTaskUpdate(updatedTasks);
       }
+      
+      // Dispatch event for other components
+      window.dispatchEvent(new CustomEvent('taskUpdate'));
     } catch (err) {
       setError('Failed to update task. Please try again.');
       console.error('Error updating task:', err);
@@ -126,6 +142,9 @@ const TaskList = ({ searchQuery, selectedFilter, selectedPriority, onTaskUpdate 
       if (onTaskUpdate) {
         onTaskUpdate(updatedTasks);
       }
+      
+      // Dispatch event for other components
+      window.dispatchEvent(new CustomEvent('taskUpdate'));
     } catch (err) {
       setError('Failed to delete task. Please try again.');
       console.error('Error deleting task:', err);
