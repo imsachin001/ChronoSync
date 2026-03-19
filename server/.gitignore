@@ -10,6 +10,7 @@
 .env.production.local
 .env*.local
 
+node_modules
 # API Keys and Secrets
 *.pem
 *.key
