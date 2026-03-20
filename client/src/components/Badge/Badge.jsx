@@ -3,6 +3,7 @@ import { useTheme } from '../../context/ThemeContext';
 import { FiShare2, FiLock } from 'react-icons/fi';
 import './Badge.css';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE_URL } from '../../utils/api';
 
 const Badge = () => {
   const { isAuthenticated, getToken } = useAuth();
@@ -19,7 +20,7 @@ const Badge = () => {
         return;
       }
 
-      const response = await fetch('/api/tasks/badges', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/badges`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useTheme } from '../../context/ThemeContext'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell, Legend } from 'recharts'
 import Badge from '../../components/Badge/Badge'
+import { API_BASE_URL } from '../../utils/api'
 import "./Analytics.css"
 
 const Analytics = () => {
@@ -28,7 +29,7 @@ const Analytics = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const response = await fetch('/api/tasks/productivity-insights', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/productivity-insights`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -54,7 +55,7 @@ const Analytics = () => {
         setLoading(false)
         return
       }
-      let response = await fetch('/api/tasks/stats', {
+      let response = await fetch(`${API_BASE_URL}/api/tasks/stats`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -63,7 +64,7 @@ const Analytics = () => {
         credentials: 'include'
       })
       if (!response.ok) {
-        response = await fetch('/api/tasks', {
+        response = await fetch(`${API_BASE_URL}/api/tasks`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -107,7 +108,7 @@ const Analytics = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const response = await fetch('/api/tasks/productivity-score', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/productivity-score`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -128,7 +129,7 @@ const Analytics = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const response = await fetch('/api/tasks/avg-completion-time', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/avg-completion-time`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -149,7 +150,7 @@ const Analytics = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const response = await fetch('/api/tasks/completion-streak', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/completion-streak`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -170,7 +171,7 @@ const Analytics = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const response = await fetch('/api/tasks/week-over-week', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/week-over-week`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -191,7 +192,7 @@ const Analytics = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const response = await fetch('/api/tasks/category-completions', {
+      const response = await fetch(`${API_BASE_URL}/api/tasks/category-completions`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,

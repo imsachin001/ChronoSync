@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import NotesList from '../NotesList/NotesList';
 import './Archive.css';
 import { useAuth } from '../../../context/AuthContext';
+import { API_BASE_URL } from '../../../utils/api';
 
 const Archive = () => {
   const { getToken } = useAuth();
@@ -19,7 +20,7 @@ const Archive = () => {
         setLoading(false);
         return;
       }
-      const response = await fetch('/api/notes', {
+      const response = await fetch(`${API_BASE_URL}/api/notes`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -40,7 +41,7 @@ const Archive = () => {
       const token = await getToken();
       if (!token) return;
 
-      const response = await fetch(`/api/notes/${noteId}/unarchive`, {
+      const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}/unarchive`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,

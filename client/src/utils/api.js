@@ -1,5 +1,5 @@
 // Base API URL
-const API_BASE_URL = 'https://chronosync-1.onrender.com';
+export const API_BASE_URL = 'https://chronosync-1.onrender.com';
 
 // Utility function to make authenticated API calls
 export const makeAuthenticatedRequest = async (endpoint, options = {}, getToken) => {

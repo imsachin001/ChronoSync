@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import NotesList from '../NotesList/NotesList';
 import './Trash.css'
 import { useAuth } from '../../../context/AuthContext';
+import { API_BASE_URL } from '../../../utils/api';
 
 const Trash = () => {
     const { getToken } = useAuth();
@@ -19,7 +20,7 @@ const Trash = () => {
                 setLoading(false);
                 return;
             }
-            const response = await fetch('/api/notes', {
+            const response = await fetch(`${API_BASE_URL}/api/notes`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                 },
@@ -40,7 +41,7 @@ const Trash = () => {
             const token = await getToken();
             if (!token) return;
 
-            const response = await fetch(`/api/notes/${noteId}/trash`, {
+            const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}/trash`, {
                 method: 'PATCH',
                 headers: {
                     Authorization: `Bearer ${token}`,
@@ -67,7 +68,7 @@ const Trash = () => {
             const token = await getToken();
             if (!token) return;
 
-            const response = await fetch(`/api/notes/${noteId}`, {
+            const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${token}`,

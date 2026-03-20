@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiCalendar, FiClock, FiTag, FiX } from 'react-icons/fi';
 import './TaskForm.css';
 import { useAuth } from '../../../context/AuthContext';
+import { createApi } from '../../../utils/api';
 
 const CATEGORY_OPTIONS = [
   '🧠 Study',
@@ -13,6 +14,7 @@ const CATEGORY_OPTIONS = [
 
 const TaskForm = ({ onTaskAdded, onClose, newTask, setNewTask, handleAddTask }) => {
   const { getToken } = useAuth();
+  const api = createApi(getToken);
   const [formData, setFormData] = useState({
     title: newTask?.title || '',
     description: newTask?.description || '',
@@ -60,21 +62,7 @@ const TaskForm = ({ onTaskAdded, onClose, newTask, setNewTask, handleAddTask }) 
 
     setLoading(true);
     try {
-      const token = await getToken();
-      const response = await fetch('/api/tasks', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formData)
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create task');
-      }
-
-      const data = await response.json();
+      const data = await api.createTask(formData);
       
       // Wait for parent to update before closing
       if (typeof onTaskAdded === 'function') {

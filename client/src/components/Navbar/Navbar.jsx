@@ -13,6 +13,7 @@ import './Navbar.css';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
+import { API_BASE_URL } from '../../utils/api';
 import logo from '../../assets/logo2.jpg';
 
 const Navbar = () => {
@@ -42,7 +43,7 @@ const Navbar = () => {
       if (!token) return;
 
       // Fetch notes with upcoming reminders
-      const notesResponse = await fetch('/api/notes', {
+      const notesResponse = await fetch(`${API_BASE_URL}/api/notes`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -51,7 +52,7 @@ const Navbar = () => {
       });
 
       // Fetch tasks
-      const tasksResponse = await fetch('/api/tasks', {
+      const tasksResponse = await fetch(`${API_BASE_URL}/api/tasks`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

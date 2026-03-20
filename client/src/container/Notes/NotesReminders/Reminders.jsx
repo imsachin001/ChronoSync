@@ -3,6 +3,7 @@ import NotesList from '../NotesList/NotesList';
 import NotesForm from '../NotesForm/NotesForm';
 import './Reminders.css';
 import { useAuth } from '../../../context/AuthContext';
+import { API_BASE_URL } from '../../../utils/api';
 
 const Reminders = () => {
   const { getToken } = useAuth();
@@ -31,7 +32,7 @@ const Reminders = () => {
         setLoading(false);
         return;
       }
-      const response = await fetch('/api/notes', {
+      const response = await fetch(`${API_BASE_URL}/api/notes`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -88,7 +89,7 @@ const Reminders = () => {
       }
       let response;
       if (editingNote) {
-        response = await fetch(`/api/notes/${editingNote._id}`, {
+        response = await fetch(`${API_BASE_URL}/api/notes/${editingNote._id}`, {
           method: 'PATCH',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -98,7 +99,7 @@ const Reminders = () => {
           credentials: 'include',
         });
       } else {
-        response = await fetch('/api/notes', {
+        response = await fetch(`${API_BASE_URL}/api/notes`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
@@ -141,7 +142,7 @@ const Reminders = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      await fetch(`/api/notes/${id}/toggle-pin`, {
+      await fetch(`${API_BASE_URL}/api/notes/${id}/toggle-pin`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` },
         credentials: 'include',
@@ -156,7 +157,7 @@ const Reminders = () => {
     try {
       const token = await getToken();
       if (!token) return;
-      await fetch(`/api/notes/${id}/trash`, {
+      await fetch(`${API_BASE_URL}/api/notes/${id}/trash`, {
         method: 'PATCH',
         headers: { Authorization: `Bearer ${token}` },
         credentials: 'include',
