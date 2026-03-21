@@ -1,5 +1,5 @@
-// Base API URL
-export const API_BASE_URL = 'https://chronosync-1.onrender.com';
+// Base API URL - defaults to localhost:5000 for development, can be overridden via VITE_API_BASE_URL env variable
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
 
 // Utility function to make authenticated API calls
 export const makeAuthenticatedRequest = async (endpoint, options = {}, getToken) => {

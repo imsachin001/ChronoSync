@@ -18,8 +18,38 @@ const PORT = process.env.PORT || 5000;
 
 const app = express();
 app.use(express.json());
+
+// Configure CORS for both local dev and production
+const allowedOrigins = [
+  "http://localhost:5173",  // Vite dev server (default)
+  "http://localhost:5174",  // Vite dev server (if port 5173 is taken)
+  "http://localhost:3000",  // Alternative local port
+  "https://deployed-chronosync.vercel.app", // Production
+  "https://chronosync-1.onrender.com" // Production backend
+];
+
 app.use(cors({
-  origin: "https://deployed-chronosync.vercel.app",
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Handle preflight requests explicitly
+app.options('*', cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true,
   methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
   allowedHeaders: ['Content-Type', 'Authorization']

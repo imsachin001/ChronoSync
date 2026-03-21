@@ -6,6 +6,30 @@ const router = express.Router();
 // Initialize Gemini AI with API key from environment
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+const GEMINI_MODEL_CANDIDATES = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash'
+];
+
+const generateWithFallback = async (fullPrompt) => {
+  let lastError = null;
+
+  for (const modelName of GEMINI_MODEL_CANDIDATES) {
+    try {
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(fullPrompt);
+      const response = await result.response;
+      return { text: response.text(), modelName };
+    } catch (error) {
+      lastError = error;
+      console.warn(`Gemini model failed: ${modelName}`, error.message);
+    }
+  }
+
+  throw lastError || new Error('All Gemini model attempts failed');
+};
+
 // AI Scheduling endpoint
 router.post('/schedule', async (req, res) => {
   try {
@@ -53,17 +77,13 @@ IMPORTANT FORMATTING INSTRUCTIONS:
 
 Keep your response concise, clear, and actionable with proper formatting.`;
 
-    // Get the generative model
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-
-    // Generate content
-    const result = await model.generateContent(fullPrompt);
-    const response = await result.response;
-    const text = response.text();
+    // Generate content using model fallback for broader deployment compatibility
+    const { text, modelName } = await generateWithFallback(fullPrompt);
 
     res.json({ 
       response: text,
-      tasksAnalyzed: tasks?.length || 0
+      tasksAnalyzed: tasks?.length || 0,
+      model: modelName
     });
 
   } catch (error) {
