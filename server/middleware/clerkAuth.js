@@ -1,17 +1,14 @@
 import { verifyToken } from '@clerk/backend';
 
 const CLERK_SECRET_KEY = process.env.CLERK_SECRET_KEY;
-console.log('CLERK_SECRET_KEY:', CLERK_SECRET_KEY);
 
 export const clerkAuth = async (req, res, next) => {
   try {
-    const authHeader = req.headers.authorization;
-    
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
       return res.status(401).json({ message: 'No token provided' });
     }
-
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
     
     if (!CLERK_SECRET_KEY) {
       console.error('CLERK_SECRET_KEY is not set');

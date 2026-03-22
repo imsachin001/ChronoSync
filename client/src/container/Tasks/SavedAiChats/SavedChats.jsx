@@ -3,6 +3,7 @@ import { FiPlus, FiSearch, FiRefreshCw, FiLogIn } from 'react-icons/fi';
 import ChatCard from './ChatCard';
 import './SavedChats.css';
 import { useAuth } from '../../../context/AuthContext';
+import { API_BASE_URL } from '../../../utils/api';
 
 const SavedChats = () => {
   const { isAuthenticated, getToken } = useAuth();
@@ -33,7 +34,7 @@ const SavedChats = () => {
       
       console.log('Fetching saved chats with valid token');
       
-      const response = await fetch('/api/chats', {
+      const response = await fetch(`${API_BASE_URL}/api/chats`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -119,7 +120,7 @@ const SavedChats = () => {
           return;
         }
         
-        const response = await fetch(`/api/chats/${chatId}`, {
+        const response = await fetch(`${API_BASE_URL}/api/chats/${chatId}`, {
           method: 'DELETE',
           headers: {
             'Authorization': `Bearer ${token}`

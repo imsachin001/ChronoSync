@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FiSend, FiCalendar, FiClock, FiCpu, FiSave, FiTrash2 } from 'react-icons/fi';
 import './AiScheduler.css';
 import { useAuth } from '../../../context/AuthContext';
-import { createApi } from '../../../utils/api';
+import { API_BASE_URL, createApi } from '../../../utils/api';
 
 const AiScheduler = () => {
   const { isAuthenticated, getToken } = useAuth();
@@ -70,7 +70,7 @@ const AiScheduler = () => {
       const token = await getToken();
       
       // Call backend API with Gemini integration
-      const response = await fetch('/api/ai/schedule', {
+      const response = await fetch(`${API_BASE_URL}/api/ai/schedule`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -143,7 +143,7 @@ const AiScheduler = () => {
       console.log('Token status:', isAuthenticated ? 'Valid' : 'Invalid');
       
       // Make a POST request to save the chat
-      const response = await fetch('/api/chats', {
+      const response = await fetch(`${API_BASE_URL}/api/chats`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

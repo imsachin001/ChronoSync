@@ -24,7 +24,6 @@ export const AuthProvider = ({ children }) => {
           // Try with a template if you have one set up in Clerk dashboard
           token = await getToken({ template: 'backend' });
         }
-        console.log('Clerk token being sent to backend:', token);
         return token;
       } catch (error) {
         console.error('Error getting token:', error);
