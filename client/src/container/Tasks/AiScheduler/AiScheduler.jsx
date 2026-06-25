@@ -53,20 +53,35 @@ const AiScheduler = () => {
   // ── Task fetching ──────────────────────────────────────────────────────────
   const fetchTasks = async () => {
     // Don't block UI — tasks are context for the AI, not required to render.
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) return [];
 
     try {
       const data = await api.getTasks();
       // api.getTasks() returns the array directly (see api.js → makeAuthenticatedRequest).
-      setTasks(Array.isArray(data) ? data : []);
+      const arr = Array.isArray(data) ? data : [];
+      setTasks(arr);
       setTasksFetched(true);
+      setFetchError(null);
+      return arr;
     } catch (error) {
       console.error('[AiScheduler] Failed to fetch tasks:', error);
       // Show a non-blocking warning in the UI — the user can still chat.
       setFetchError('Could not load your tasks. AI responses will be based on your message only.');
       setTasksFetched(true);
+      return tasks; // fall back to last known list
     }
   };
+
+  // Keep tasks fresh when they change elsewhere (toggle / add / delete).
+  // TaskList & Tasks dispatch a 'taskUpdate' event; without this listener
+  // AiScheduler keeps the list it fetched on mount, so a just-completed task
+  // would still be sent on a reschedule and reappear.
+  useEffect(() => {
+    const onTaskUpdate = () => { fetchTasks(); };
+    window.addEventListener('taskUpdate', onTaskUpdate);
+    return () => window.removeEventListener('taskUpdate', onTaskUpdate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   // ── Keyboard submit (Shift+Enter = newline, Enter = send) ──────────────────
   const handleKeyDown = (e) => {
@@ -90,6 +105,11 @@ const AiScheduler = () => {
     try {
       const token = await getToken();
 
+      // Always pull the latest tasks right before scheduling so a task that was
+      // just completed / added / deleted is reflected. This is what prevents a
+      // completed task from reappearing in a "reschedule" request.
+      const freshTasks = await fetchTasks();
+
       const response = await fetch(`${API_BASE_URL}/api/ai/schedule`, {
         method: 'POST',
         headers: {
@@ -98,7 +118,7 @@ const AiScheduler = () => {
         },
         body: JSON.stringify({
           prompt: trimmed,
-          tasks,               // full task objects — backend uses all schema fields
+          tasks: freshTasks,   // full, up-to-date task objects — backend filters completed
         }),
       });
 

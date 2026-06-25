@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { FiCalendar, FiClock, FiTag, FiX } from 'react-icons/fi';
 import './TaskForm.css';
 import { useAuth } from '../../../context/AuthContext';
@@ -29,6 +29,27 @@ const TaskForm = ({ onTaskAdded, onClose, newTask, setNewTask, handleAddTask }) 
   const [newTag, setNewTag] = useState('');
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+
+  // Refs let us open the browser's native calendar / clock popups on click,
+  // so users pick a date instead of typing it manually.
+  const dueDateRef = useRef(null);
+  const dueTimeRef = useRef(null);
+
+  // Opens the native picker for a date/time input. showPicker() is supported in
+  // all modern browsers; if unavailable the field simply stays editable.
+  const openPicker = (ref) => {
+    const el = ref.current;
+    if (el && typeof el.showPicker === 'function') {
+      try { el.showPicker(); } catch { /* must be a user gesture — safe to ignore */ }
+    }
+  };
+
+  // Today's date in local time (YYYY-MM-DD) — the earliest selectable due date.
+  const todayStr = (() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().split('T')[0];
+  })();
 
   const validateForm = () => {
     const newErrors = {};
@@ -150,12 +171,20 @@ const TaskForm = ({ onTaskAdded, onClose, newTask, setNewTask, handleAddTask }) 
             <div className='form-group'>
               <label htmlFor="dueDate">Due Date *</label>
               <div className="input-with-icon">
-                <FiCalendar className="input-icon" />
+                <FiCalendar
+                  className="input-icon"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => openPicker(dueDateRef)}
+                  title="Open calendar"
+                />
                 <input
+                  ref={dueDateRef}
                   id="dueDate"
                   type='date'
+                  min={todayStr}
                   value={formData.dueDate}
                   onChange={(e) => setFormData({...formData, dueDate: e.target.value})}
+                  onClick={() => openPicker(dueDateRef)}
                   className={errors.dueDate ? 'error' : ''}
                 />
               </div>
@@ -165,12 +194,19 @@ const TaskForm = ({ onTaskAdded, onClose, newTask, setNewTask, handleAddTask }) 
             <div className='form-group'>
               <label htmlFor="dueTime">Due Time</label>
               <div className="input-with-icon">
-                <FiClock className="input-icon" />
+                <FiClock
+                  className="input-icon"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => openPicker(dueTimeRef)}
+                  title="Open time picker"
+                />
                 <input
+                  ref={dueTimeRef}
                   id="dueTime"
                   type='time'
                   value={formData.dueTime}
                   onChange={(e) => setFormData({...formData, dueTime: e.target.value})}
+                  onClick={() => openPicker(dueTimeRef)}
                   className={errors.dueTime ? 'error' : ''}
                 />
               </div>
