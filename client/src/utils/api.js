@@ -107,4 +107,10 @@ export const createApi = (getToken) => ({
 
   // Test auth
   testAuth: () => makeAuthenticatedRequest('/api/test-auth', {}, getToken),
-}); 
+
+  // AI Scheduler — enqueue a schedule job; returns { jobId }
+  scheduleAi: (prompt, taskIds) => makeAuthenticatedRequest('/api/ai/schedule', {
+    method: 'POST',
+    body: JSON.stringify({ prompt, taskIds }),
+  }, getToken),
+});

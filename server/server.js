@@ -10,6 +10,7 @@ import { clerkAuth } from "./middleware/clerkAuth.js";
 import dotenv from 'dotenv';
 import { initializeSchedulers } from "./utils/notificationScheduler.js";
 import { testEmailConfiguration } from "./utils/notificationService.js";
+import { startWorker } from "./workers/scheduleWorker.js";
 
 // Load environment variables
 dotenv.config();
@@ -65,6 +66,15 @@ mongoose.connect(process.env.MONGO_URI || "mongodb://localhost:27017/chronosyncD
   
   // Test email configuration
   testEmailConfiguration();
+
+  // Start the BullMQ schedule worker in-process.
+  // This means you only need one terminal — no separate `npm run worker` needed.
+  try {
+    startWorker();
+  } catch (err) {
+    console.error('[server] Failed to start schedule worker:', err.message);
+    console.warn('[server] AI scheduling will be unavailable until this is fixed.');
+  }
 })
 .catch((err) => {
   console.error("MongoDB connection error:", err);

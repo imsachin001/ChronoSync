@@ -1,81 +1,84 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { FiSend, FiCalendar, FiClock, FiCpu, FiSave, FiTrash2, FiAlertCircle } from 'react-icons/fi';
+import {
+  FiSend, FiSave, FiTrash2, FiAlertCircle,
+  FiZap, FiClock, FiTarget, FiCalendar, FiCheckCircle,
+} from 'react-icons/fi';
 import './AiScheduler.css';
 import { useAuth } from '../../../context/AuthContext';
 import { API_BASE_URL, createApi } from '../../../utils/api';
 
+// ── Quick-prompt suggestions shown in the welcome state ───────────────────────
+const QUICK_PROMPTS = [
+  { icon: <FiZap />,      label: 'Plan my day',            text: 'Plan my day with high priority tasks first' },
+  { icon: <FiTarget />,   label: "What's urgent?",         text: 'What should I work on right now?' },
+  { icon: <FiClock />,    label: 'Focus schedule',         text: 'Create a 2-hour deep focus schedule for today' },
+  { icon: <FiCalendar />, label: 'Schedule this week',     text: 'Help me schedule my tasks across this week' },
+  { icon: <FiCheckCircle />, label: 'Prioritise overdue', text: 'Show me overdue tasks and help me catch up' },
+];
+
 const AiScheduler = () => {
   const { isAuthenticated, getToken } = useAuth();
-  // createApi is stable as long as getToken is stable — no need to memoize here.
   const api = createApi(getToken);
 
-  const [prompt, setPrompt]               = useState('');
-  const [messages, setMessages]           = useState([
-    {
-      type: 'system',
-      content:
-        'I can help plan your schedule. Try:\n' +
-        '- "Plan my day with high priority tasks first"\n' +
-        '- "What should I work on right now?"\n' +
-        '- "Create a focus schedule for today"',
-    },
-  ]);
-  const [isLoading, setIsLoading]         = useState(false);
-  const [isSaving, setIsSaving]           = useState(false);
-  const [tasks, setTasks]                 = useState([]);
-  const [tasksFetched, setTasksFetched]   = useState(false); // track whether tasks loaded
-  const [fetchError, setFetchError]       = useState(null);  // surface task-fetch failures
+  const [prompt, setPrompt]             = useState('');
+  const [messages, setMessages]         = useState([]);   // empty = show welcome state
+  const [isLoading, setIsLoading]       = useState(false);
+  const [isSaving, setIsSaving]         = useState(false);
+  const [savedOk, setSavedOk]           = useState(false); // brief ✓ feedback
+  const [tasks, setTasks]               = useState([]);
+  const [tasksFetched, setTasksFetched] = useState(false);
+  const [fetchError, setFetchError]     = useState(null);
 
-  // Auto-scroll to the latest message.
   const messagesEndRef = useRef(null);
+  const textareaRef    = useRef(null);
+
+  // Auto-scroll to bottom whenever messages change.
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
-  // ── On mount: restore a saved chat OR fetch tasks ──────────────────────────
+  // Auto-resize textarea as user types.
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }, [prompt]);
+
+  // ── On mount ────────────────────────────────────────────────────────────────
   useEffect(() => {
     const savedChat = localStorage.getItem('viewingChat');
     if (savedChat) {
       try {
         const chatData = JSON.parse(savedChat);
         setMessages(chatData.messages);
-      } catch {
-        // Corrupted data — ignore and proceed normally.
-      } finally {
+      } catch { /* ignore */ } finally {
         localStorage.removeItem('viewingChat');
       }
     }
-
     fetchTasks();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ── Task fetching ──────────────────────────────────────────────────────────
+  // ── Task fetching ────────────────────────────────────────────────────────────
   const fetchTasks = async () => {
-    // Don't block UI — tasks are context for the AI, not required to render.
     if (!isAuthenticated) return [];
-
     try {
       const data = await api.getTasks();
-      // api.getTasks() returns the array directly (see api.js → makeAuthenticatedRequest).
-      const arr = Array.isArray(data) ? data : [];
+      const arr  = Array.isArray(data) ? data : [];
       setTasks(arr);
       setTasksFetched(true);
       setFetchError(null);
       return arr;
     } catch (error) {
       console.error('[AiScheduler] Failed to fetch tasks:', error);
-      // Show a non-blocking warning in the UI — the user can still chat.
-      setFetchError('Could not load your tasks. AI responses will be based on your message only.');
+      setFetchError('Could not load your tasks. AI will respond based on your message only.');
       setTasksFetched(true);
-      return tasks; // fall back to last known list
+      return tasks;
     }
   };
 
-  // Keep tasks fresh when they change elsewhere (toggle / add / delete).
-  // TaskList & Tasks dispatch a 'taskUpdate' event; without this listener
-  // AiScheduler keeps the list it fetched on mount, so a just-completed task
-  // would still be sent on a reschedule and reappear.
+  // Keep tasks fresh when they're modified elsewhere.
   useEffect(() => {
     const onTaskUpdate = () => { fetchTasks(); };
     window.addEventListener('taskUpdate', onTaskUpdate);
@@ -83,7 +86,7 @@ const AiScheduler = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
-  // ── Keyboard submit (Shift+Enter = newline, Enter = send) ──────────────────
+  // ── Keyboard handling ────────────────────────────────────────────────────────
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -91,124 +94,110 @@ const AiScheduler = () => {
     }
   };
 
-  // ── Send message ───────────────────────────────────────────────────────────
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    const trimmed = prompt.trim();
+  // ── Submit / enqueue + poll ──────────────────────────────────────────────────
+  const handleSubmit = async (e, overrideText) => {
+    e?.preventDefault();
+    const trimmed = (overrideText ?? prompt).trim();
     if (!trimmed || isLoading) return;
 
-    // Optimistically show the user's message.
     setMessages(prev => [...prev, { type: 'user', content: trimmed }]);
     setPrompt('');
     setIsLoading(true);
 
     try {
-      const token = await getToken();
-
-      // Always pull the latest tasks right before scheduling so a task that was
-      // just completed / added / deleted is reflected. This is what prevents a
-      // completed task from reappearing in a "reschedule" request.
       const freshTasks = await fetchTasks();
+      const taskIds    = freshTasks.map(t => t._id).filter(Boolean);
 
-      const response = await fetch(`${API_BASE_URL}/api/ai/schedule`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          prompt: trimmed,
-          tasks: freshTasks,   // full, up-to-date task objects — backend filters completed
-        }),
+      // Step 1 — enqueue
+      const enqueueToken = await getToken();
+      const enqueueRes   = await fetch(`${API_BASE_URL}/api/ai/schedule`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${enqueueToken}` },
+        body:    JSON.stringify({ prompt: trimmed, taskIds }),
       });
 
-      if (!response.ok) {
-        // Try to get a message from the server; fall back to HTTP status text.
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.message || `Server error ${response.status}`);
+      if (!enqueueRes.ok) {
+        const err = await enqueueRes.json().catch(() => ({}));
+        throw new Error(err.message || `Server error ${enqueueRes.status}`);
       }
 
-      const data = await response.json();
+      const { jobId } = await enqueueRes.json();
+      if (!jobId) throw new Error('No jobId returned from server.');
 
-      // `source` tells us whether Gemini or the fallback handled this request.
-      // We surface it as a subtle label so users understand what they're seeing.
+      // Step 2 — poll
+      const POLL_MS   = 2000;
+      const MAX_POLLS = 30;
+      let result = null;
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, POLL_MS));
+        const pollToken = await getToken();
+        const pollRes   = await fetch(`${API_BASE_URL}/api/ai/schedule/${jobId}`, {
+          headers: { 'Authorization': `Bearer ${pollToken}` },
+        });
+
+        if (!pollRes.ok && pollRes.status !== 202) {
+          const err = await pollRes.json().catch(() => ({}));
+          throw new Error(err.message || `Poll error ${pollRes.status}`);
+        }
+
+        const pollData = await pollRes.json();
+        if (pollData.status === 'completed' || pollData.status === 'failed') {
+          result = pollData;
+          break;
+        }
+      }
+
+      if (!result) throw new Error('Schedule generation timed out. Please try again.');
+      if (result.status === 'failed') throw new Error(result.errorMessage || 'Worker failed to generate a schedule.');
+
       const sourceLabel =
-        data.source === 'fallback'
+        result.source === 'fallback'
           ? '\n\n— Scheduled by built-in priority algorithm (AI unavailable) —'
-          : '';                // Gemini responses need no annotation
+          : '';
 
-      setMessages(prev => [
-        ...prev,
-        {
-          type: 'ai',
-          content: data.response + sourceLabel,
-          source: data.source,   // keep raw source for potential future styling
-        },
-      ]);
+      setMessages(prev => [...prev, {
+        type:    'ai',
+        content: result.response + sourceLabel,
+        source:  result.source,
+        model:   result.model,
+      }]);
     } catch (error) {
       console.error('[AiScheduler] Request failed:', error);
-      setMessages(prev => [
-        ...prev,
-        {
-          type: 'ai',
-          content:
-            `Sorry, something went wrong: ${error.message}.\n` +
-            `Please check your connection and try again.`,
-          source: 'error',
-        },
-      ]);
+      setMessages(prev => [...prev, {
+        type:    'ai',
+        content: `Something went wrong: ${error.message}\n\nPlease check your connection and try again.`,
+        source:  'error',
+      }]);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // ── Save chat ──────────────────────────────────────────────────────────────
-  const handleSaveChat = async () => {
-    // Need at least one real exchange (system + user + ai).
-    if (messages.length <= 1) return;
+  // ── Quick prompt click ───────────────────────────────────────────────────────
+  const handleQuickPrompt = (text) => {
+    handleSubmit(null, text);
+  };
 
+  // ── Save chat ────────────────────────────────────────────────────────────────
+  const handleSaveChat = async () => {
+    if (messages.length === 0) return;
     setIsSaving(true);
     try {
-      if (!isAuthenticated) {
-        alert('You need to be logged in to save chats.');
-        window.location.href = '/login';
-        return;
-      }
-
-      const token = await getToken();
-
-      const formattedMessages = messages.map(msg => ({
-        type:      msg.type,
-        content:   msg.content,
-        timestamp: new Date().toISOString(),
-      }));
-
-      const chatToSave = {
-        // Use first user message as title (trimmed to 50 chars for readability).
-        title: messages.find(m => m.type === 'user')?.content.substring(0, 50) || 'Untitled Chat',
-        messages: formattedMessages,
+      if (!isAuthenticated) { window.location.href = '/login'; return; }
+      const token    = await getToken();
+      const chatData = {
+        title:    messages.find(m => m.type === 'user')?.content.substring(0, 50) || 'Untitled Chat',
+        messages: messages.map(m => ({ type: m.type, content: m.content, timestamp: new Date().toISOString() })),
       };
-
-      const response = await fetch(`${API_BASE_URL}/api/chats`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify(chatToSave),
+      const res = await fetch(`${API_BASE_URL}/api/chats`, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body:    JSON.stringify(chatData),
       });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({ message: 'Unknown error' }));
-        if (response.status === 401) {
-          alert('Session expired. Please log in again.');
-          window.location.href = '/login';
-          return;
-        }
-        throw new Error(errData.message || response.statusText);
-      }
-
-      alert('Chat saved successfully!');
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).message || res.statusText);
+      setSavedOk(true);
+      setTimeout(() => setSavedOk(false), 2500);
     } catch (error) {
       console.error('[AiScheduler] Save failed:', error);
       alert(`Failed to save chat: ${error.message}`);
@@ -217,149 +206,184 @@ const AiScheduler = () => {
     }
   };
 
-  // ── Clear chat ─────────────────────────────────────────────────────────────
+  // ── Clear chat ───────────────────────────────────────────────────────────────
   const handleClearChat = () => {
-    setMessages([
-      {
-        type: 'system',
-        content:
-          'I can help plan your schedule. Try:\n' +
-          '- "Plan my day with high priority tasks first"\n' +
-          '- "What should I work on right now?"\n' +
-          '- "Create a focus schedule for today"',
-      },
-    ]);
+    setMessages([]);
     setFetchError(null);
     setPrompt('');
   };
 
-  // ── Derived state ──────────────────────────────────────────────────────────
-  const hasExchange = messages.length > 1;
-  const pendingCount = tasks.filter(t => !t.completed).length;
+  // ── Derived state ────────────────────────────────────────────────────────────
+  const hasMessages   = messages.length > 0;
+  const pendingCount  = tasks.filter(t => !t.completed).length;
+  const showWelcome   = !hasMessages && !isLoading;
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
   // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
-    <div className="ai-scheduler-container">
+    <div className="ais-root">
 
-      {/* ── Header ── */}
-      <div className="ai-scheduler-header">
-        <h2><FiCpu /> AI Scheduling Assistant</h2>
-        <div className="ai-header-actions">
-          <p>
-            Personalized scheduling based on your tasks
-            {tasksFetched && ` · ${pendingCount} pending task${pendingCount !== 1 ? 's' : ''} loaded`}
-          </p>
-
-          {hasExchange && (
-            <div className="header-buttons">
-              {isAuthenticated ? (
-                <button
-                  className="save-chat-btn"
-                  onClick={handleSaveChat}
-                  disabled={isSaving}
-                  title="Save this conversation"
-                >
-                  <FiSave />
-                  <span>{isSaving ? 'Saving…' : 'Save Chat'}</span>
-                </button>
-              ) : (
-                <button
-                  className="login-btn"
-                  onClick={() => (window.location.href = '/login')}
-                  title="Log in to save chats"
-                >
-                  <span>Login to Save Chats</span>
-                </button>
-              )}
-
-              <button
-                className="clear-chat-btn"
-                onClick={handleClearChat}
-                title="Clear the current conversation"
-              >
-                <FiTrash2 />
-                <span>Clear Chat</span>
-              </button>
-            </div>
-          )}
+      {/* ── Gradient Header ─────────────────────────────────────────────────── */}
+      <div className="ais-header">
+        <div className="ais-header-left">
+          <div className="ais-avatar-orb">
+            <span className="ais-orb-inner" />
+          </div>
+          <div>
+            <h1 className="ais-title">ChronoSync <span>AI</span></h1>
+            <p className="ais-subtitle">
+              {tasksFetched
+                ? `${pendingCount} pending task${pendingCount !== 1 ? 's' : ''} · ready to schedule`
+                : 'Your intelligent scheduling assistant'}
+            </p>
+          </div>
         </div>
+
+        {hasMessages && (
+          <div className="ais-header-actions">
+            {isAuthenticated && (
+              <button
+                className={`ais-action-btn ${savedOk ? 'saved' : ''}`}
+                onClick={handleSaveChat}
+                disabled={isSaving}
+                title="Save conversation"
+              >
+                <FiSave />
+                <span>{savedOk ? 'Saved!' : isSaving ? 'Saving…' : 'Save'}</span>
+              </button>
+            )}
+            <button
+              className="ais-action-btn danger"
+              onClick={handleClearChat}
+              title="Clear conversation"
+            >
+              <FiTrash2 />
+              <span>Clear</span>
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* ── Non-blocking task-fetch warning ── */}
+      {/* ── Task-fetch error banner ──────────────────────────────────────────── */}
       {fetchError && (
-        <div className="ai-fetch-warning">
+        <div className="ais-banner">
           <FiAlertCircle />
           <span>{fetchError}</span>
         </div>
       )}
 
-      {/* ── Chat area ── */}
-      <div className="ai-chat-container">
-        <div className="ai-messages">
-          {messages.map((message, index) => (
-            <div key={index} className={`ai-message ${message.type}`}>
+      {/* ── Chat body ───────────────────────────────────────────────────────── */}
+      <div className="ais-body">
 
-              {message.type === 'system' && <FiCpu className="message-icon" />}
-              {message.type === 'user'   && <div className="user-icon">You</div>}
-              {message.type === 'ai'     && <FiCalendar className="message-icon" />}
+        {/* Welcome / empty state */}
+        {showWelcome && (
+          <div className="ais-welcome">
+            <div className="ais-welcome-orb" />
+            <h2>How can I help you today?</h2>
+            <p>Ask me to plan, prioritise, or optimise your schedule.</p>
+            <div className="ais-chips">
+              {QUICK_PROMPTS.map((qp) => (
+                <button
+                  key={qp.label}
+                  className="ais-chip"
+                  onClick={() => handleQuickPrompt(qp.text)}
+                >
+                  <span className="ais-chip-icon">{qp.icon}</span>
+                  {qp.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-              {/* whiteSpace: pre-wrap renders the scheduler's newlines correctly. */}
-              <div className="message-content" style={{ whiteSpace: 'pre-wrap' }}>
-                {message.content}
+        {/* Messages */}
+        <div className="ais-messages">
+          {messages.map((msg, idx) => (
+            <div key={idx} className={`ais-msg-row ${msg.type}`}>
+              {msg.type === 'ai' && (
+                <div className={`ais-msg-avatar ${msg.source === 'error' ? 'error' : ''}`}>
+                  <span />
+                </div>
+              )}
+
+              <div className={`ais-bubble ${msg.type} ${msg.source === 'error' ? 'error' : ''}`}>
+                {msg.type === 'ai' && msg.source && msg.source !== 'error' && (
+                  <div className="ais-bubble-badge">
+                    {msg.source === 'gemini' ? `✦ Gemini${msg.model ? ` · ${msg.model.replace('gemini-', '').replace('-', ' ')}` : ''}` : '⚡ Priority Scheduler'}
+                  </div>
+                )}
+                <div className="ais-bubble-content">
+                  {msg.content}
+                </div>
               </div>
 
+              {msg.type === 'user' && (
+                <div className="ais-msg-avatar user">
+                  <span>You</span>
+                </div>
+              )}
             </div>
           ))}
 
-          {/* Typing indicator */}
+          {/* Typing / processing indicator */}
           {isLoading && (
-            <div className="ai-message ai">
-              <FiCalendar className="message-icon" />
-              <div className="message-content loading">
-                <span className="loading-dot" />
-                <span className="loading-dot" />
-                <span className="loading-dot" />
+            <div className="ais-msg-row ai">
+              <div className="ais-msg-avatar">
+                <span />
+              </div>
+              <div className="ais-bubble ai thinking">
+                <div className="ais-thinking-dots">
+                  <span /><span /><span />
+                </div>
+                <span className="ais-thinking-label">AI is generating your schedule…</span>
               </div>
             </div>
           )}
 
-          {/* Invisible anchor for auto-scroll */}
+          {/* Quick-prompt chips (shown after first exchange too) */}
+          {hasMessages && !isLoading && (
+            <div className="ais-inline-chips">
+              {QUICK_PROMPTS.slice(0, 3).map((qp) => (
+                <button
+                  key={qp.label}
+                  className="ais-chip small"
+                  onClick={() => handleQuickPrompt(qp.text)}
+                >
+                  <span className="ais-chip-icon">{qp.icon}</span>
+                  {qp.label}
+                </button>
+              ))}
+            </div>
+          )}
+
           <div ref={messagesEndRef} />
         </div>
+      </div>
 
-        {/* ── Input form ── */}
-        {/*
-          The onSubmit on the form covers button click.
-          handleKeyDown covers Enter key (Shift+Enter = newline).
-        */}
-        <form className="ai-input-container" onSubmit={handleSubmit}>
+      {/* ── Input area ──────────────────────────────────────────────────────── */}
+      <div className="ais-input-wrapper">
+        <form className="ais-input-bar" onSubmit={handleSubmit}>
           <textarea
+            ref={textareaRef}
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask me to plan your schedule… (Enter to send, Shift+Enter for newline)"
-            rows={2}
-            className="ai-input"
+            placeholder="Ask me to plan your schedule…"
+            rows={1}
+            className="ais-textarea"
             disabled={isLoading}
           />
           <button
             type="submit"
-            className="ai-submit-btn"
+            className="ais-send-btn"
             disabled={!prompt.trim() || isLoading}
-            title="Send"
+            title="Send (Enter)"
           >
             <FiSend />
           </button>
         </form>
-      </div>
-
-      {/* ── Feature strip ── */}
-      <div className="ai-features">
-        <div className="feature"><FiClock />    <span>Time-Blocking</span></div>
-        <div className="feature"><FiCalendar /> <span>Daily Planning</span></div>
-        <div className="feature"><FiCpu />      <span>Priority Analysis</span></div>
+        <p className="ais-hint">Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line</p>
       </div>
 
     </div>

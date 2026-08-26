@@ -1,133 +1,116 @@
-import express from 'express';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+#!/usr/bin/env node
+// ─────────────────────────────────────────────────────────────────────────────
+// workers/scheduleWorker.js
+//
+// Standalone BullMQ worker process for the "schedule" queue.
+// Run it separately from the API server:
+//
+//   node workers/scheduleWorker.js        (production)
+//   nodemon workers/scheduleWorker.js     (development)
+//
+// Or it is started automatically in-process by server.js via startWorker().
+//
+// Responsibilities:
+//   1. Pull job payload { userId, taskIds, prompt } from Redis.
+//   2. Fetch the authoritative task documents from MongoDB by their IDs.
+//   3. Run the Gemini prompt-builder + retry logic (same code the old route used).
+//   4. Write the result (or error) into the ScheduleJob document.
+//
+// The API layer polls GET /api/ai/schedule/:jobId → reads ScheduleJob → responds.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import 'dotenv/config';
+import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { scheduleQueue } from '../queues/scheduleQueue.js';
+import { Worker }  from 'bullmq';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
+import { redisConnection }  from '../config/redis.js';
+import { SCHEDULE_QUEUE_NAME } from '../queues/scheduleQueue.js';
+import Task        from '../models/Task.js';
 import ScheduleJob from '../models/ScheduleJob.js';
 
-const router = express.Router();
-
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 1 — CONSTANTS
-// Tune these weights to change how the fallback scheduler orders tasks.
+// SECTION 1 — CONSTANTS  (mirrors aiRoutes.js — keep in sync)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const PRIORITY_SCORE = { high: 100, medium: 50, low: 10 };
 
-// Urgency brackets — how many points to add based on how close the due date is.
 const URGENCY_SCORE = {
-  overdue:   80,  // past due date+time
-  today:     60,  // due later today
-  tomorrow:  40,  // due within 24–48 h
-  week:      20,  // due within 7 days
-  later:      0,  // due beyond 7 days
+  overdue:  80,
+  today:    60,
+  tomorrow: 40,
+  week:     20,
+  later:     0,
 };
 
-const WORKDAY_START_HOUR      = 9;   // 09:00
-const WORKDAY_END_HOUR        = 18;  // 18:00
-const DEFAULT_DURATION_MINS   = 45;  // used when estimatedTime cannot be parsed
-const BREAK_THRESHOLD_MINS    = 90;  // insert a break after this many work-minutes
-const BREAK_DURATION_MINS     = 15;
+const WORKDAY_START_HOUR    = 9;
+const WORKDAY_END_HOUR      = 18;
+const DEFAULT_DURATION_MINS = 45;
+const BREAK_THRESHOLD_MINS  = 90;
+const BREAK_DURATION_MINS   = 15;
 
-// ── Gemini retry tuning ──────────────────────────────────────────────────────
-// Model fallback chain — tried in order until one succeeds. flash-lite is the
-// cheaper/faster backup used when flash errors out or is unavailable.
-const GEMINI_MODELS           = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
-const GEMINI_MAX_ATTEMPTS     = 3;     // total tries (1 initial + 2 retries)
-const GEMINI_BASE_DELAY_MS    = 600;   // first backoff delay; doubles each retry
-const GEMINI_MAX_DELAY_MS     = 4000;  // cap on a single backoff delay
-const GEMINI_TIMEOUT_MS       = 20000; // abort a single attempt after this long
+const GEMINI_MODELS        = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const GEMINI_MAX_ATTEMPTS  = 3;
+const GEMINI_BASE_DELAY_MS = 600;
+const GEMINI_MAX_DELAY_MS  = 4000;
+const GEMINI_TIMEOUT_MS    = 20000;
 
-// HTTP status codes worth retrying (transient). Everything else fails fast.
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 2 — HELPERS
+// SECTION 2 — PURE HELPERS  (identical to aiRoutes.js)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Parses Task.estimatedTime (free-text string) into an integer number of minutes.
- * Handles formats like: "45 min", "1 hour", "1.5 hours", "90", "2h 30m", etc.
- * Returns DEFAULT_DURATION_MINS if parsing fails.
- */
 function parseEstimatedTime(raw) {
   if (!raw || typeof raw !== 'string') return DEFAULT_DURATION_MINS;
-
   const s = raw.trim().toLowerCase();
-
-  // "2h 30m" or "2hr 30min" style
   const hhmm = s.match(/(\d+(?:\.\d+)?)\s*h(?:r|ours?)?\s*(\d+)?\s*m?/);
   if (hhmm) {
-    const hours = parseFloat(hhmm[1]) || 0;
-    const mins  = parseInt(hhmm[2], 10) || 0;
-    const total = Math.round(hours * 60 + mins);
+    const total = Math.round((parseFloat(hhmm[1]) || 0) * 60 + (parseInt(hhmm[2], 10) || 0));
     return total > 0 ? total : DEFAULT_DURATION_MINS;
   }
-
-  // "45 min" or "45 minutes"
   const minOnly = s.match(/(\d+(?:\.\d+)?)\s*m(?:in(?:utes?)?)?/);
   if (minOnly) {
     const total = Math.round(parseFloat(minOnly[1]));
     return total > 0 ? total : DEFAULT_DURATION_MINS;
   }
-
-  // "1.5 hours" or "2 hours"
   const hrOnly = s.match(/(\d+(?:\.\d+)?)\s*h(?:ours?|r)?/);
   if (hrOnly) {
     const total = Math.round(parseFloat(hrOnly[1]) * 60);
     return total > 0 ? total : DEFAULT_DURATION_MINS;
   }
-
-  // bare number — assume minutes
   const bare = s.match(/^(\d+)$/);
   if (bare) return parseInt(bare[1], 10) || DEFAULT_DURATION_MINS;
-
   return DEFAULT_DURATION_MINS;
 }
 
-/**
- * Combines Task.dueDate (Date) and Task.dueTime (string "HH:MM" or "HH:MM AM/PM")
- * into one JavaScript Date for precise urgency calculation.
- */
 function combineDueDateAndTime(dueDate, dueTime) {
   if (!dueDate) return null;
-
   const base = new Date(dueDate);
   if (isNaN(base.getTime())) return null;
-
   if (dueTime && typeof dueTime === 'string') {
-    // Support both "14:30" and "2:30 PM"
     const t24 = dueTime.trim().match(/^(\d{1,2}):(\d{2})$/);
     const t12 = dueTime.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
-
     if (t24) {
       base.setHours(parseInt(t24[1], 10), parseInt(t24[2], 10), 0, 0);
     } else if (t12) {
       let h = parseInt(t12[1], 10);
       const m = parseInt(t12[2], 10);
-      const meridian = t12[3].toUpperCase();
-      if (meridian === 'PM' && h !== 12) h += 12;
-      if (meridian === 'AM' && h === 12) h = 0;
+      const mer = t12[3].toUpperCase();
+      if (mer === 'PM' && h !== 12) h += 12;
+      if (mer === 'AM' && h === 12) h = 0;
       base.setHours(h, m, 0, 0);
     }
-    // If dueTime is some other format, just use midnight of dueDate — safe default.
   }
-
   return base;
 }
 
-/**
- * Robustly decides whether a task is completed.
- * The client may send `completed` as a boolean, the string "true"/"false",
- * 0/1, or omit it while still setting `completedAt`. Trusting a single raw
- * boolean is what let completed tasks leak back into reschedules — so we
- * normalise every possible shape here and use this everywhere.
- */
 function isCompleted(task) {
   if (!task) return false;
   const c = task.completed;
   if (c === true || c === 1) return true;
   if (typeof c === 'string' && ['true', '1', 'yes', 'done'].includes(c.trim().toLowerCase())) return true;
-  // A real completion timestamp also means done, even if the flag is missing/false.
   if (task.completedAt) {
     const d = new Date(task.completedAt);
     if (!isNaN(d.getTime())) return true;
@@ -135,35 +118,27 @@ function isCompleted(task) {
   return false;
 }
 
-/** Returns true when a task's combined deadline is in the past (and it's pending). */
 function isOverdue(task, now = new Date()) {
   if (isCompleted(task)) return false;
   const deadline = combineDueDateAndTime(task.dueDate, task.dueTime);
   return deadline ? deadline.getTime() < now.getTime() : false;
 }
 
-/**
- * Returns a numeric urgency score for a task using its combined due datetime.
- */
 function getUrgencyScore(dueDate, dueTime, now = new Date()) {
   const deadline = combineDueDateAndTime(dueDate, dueTime);
   if (!deadline) return URGENCY_SCORE.later;
-
   const diffMins = (deadline - now) / (1000 * 60);
-
-  if (diffMins < 0)       return URGENCY_SCORE.overdue;
-  if (diffMins < 60 * 24) return URGENCY_SCORE.today;
-  if (diffMins < 60 * 48) return URGENCY_SCORE.tomorrow;
-  if (diffMins < 60 * 168)return URGENCY_SCORE.week;
+  if (diffMins < 0)        return URGENCY_SCORE.overdue;
+  if (diffMins < 60 * 24)  return URGENCY_SCORE.today;
+  if (diffMins < 60 * 48)  return URGENCY_SCORE.tomorrow;
+  if (diffMins < 60 * 168) return URGENCY_SCORE.week;
   return URGENCY_SCORE.later;
 }
 
-/** Adds `minutes` to a Date and returns a new Date. */
 function addMinutes(date, minutes) {
   return new Date(date.getTime() + minutes * 60 * 1000);
 }
 
-/** Rounds a Date UP to the next 5-minute boundary for tidy start times. */
 function roundUpToFiveMins(date) {
   const d = new Date(date);
   const r = d.getMinutes() % 5;
@@ -172,22 +147,15 @@ function roundUpToFiveMins(date) {
   return d;
 }
 
-/** Formats a Date to "HH:MM AM/PM". */
 function formatTime(date) {
-  return date.toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
+  return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 }
 
-/** Formats a Date to short readable date like "Mon, Jun 24". */
 function formatDate(dateStr) {
   if (!dateStr) return 'No due date';
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    weekday: 'short', month: 'short', day: 'numeric',
-  });
+  return new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-/** Human-friendly duration: 90 -> "1h 30m", 45 -> "45m". */
 function formatDuration(mins) {
   if (mins < 60) return `${mins}m`;
   const h = Math.floor(mins / 60);
@@ -195,32 +163,18 @@ function formatDuration(mins) {
   return m ? `${h}h ${m}m` : `${h}h`;
 }
 
-/** Maps priority string to an emoji label for fallback output. */
 function priorityLabel(p) {
   if (!p) return '🟡 Medium';
-  const map = { high: '🔴 High', medium: '🟡 Medium', low: '🟢 Low' };
-  return map[p.toLowerCase()] ?? '🟡 Medium';
+  return ({ high: '🔴 High', medium: '🟡 Medium', low: '🟢 Low' })[p.toLowerCase()] ?? '🟡 Medium';
 }
 
-/** Sleep helper for retry backoff. */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-/**
- * Determines the schedulable time window starting from "now".
- *
- * Recognises the time range we actually have left today:
- *   - If now is before the workday start  -> window = [workdayStart, workdayEnd]
- *   - If now is within the workday         -> window = [now(rounded), workdayEnd]
- *   - If now is at/after the workday end    -> window = tomorrow [start, end]
- *
- * Returns { start, end, availableMins, isToday, rolledToTomorrow }.
- */
 function getScheduleWindow(now = new Date()) {
   const start = new Date(now);
   start.setHours(WORKDAY_START_HOUR, 0, 0, 0);
-
   const end = new Date(now);
   end.setHours(WORKDAY_END_HOUR, 0, 0, 0);
 
@@ -228,48 +182,32 @@ function getScheduleWindow(now = new Date()) {
   let rolledToTomorrow = false;
 
   if (now < start) {
-    // Before work hours — full day available.
     cursor = new Date(start);
   } else if (now >= end) {
-    // Day is over — roll to tomorrow morning.
     start.setDate(start.getDate() + 1);
     end.setDate(end.getDate() + 1);
     cursor = new Date(start);
     rolledToTomorrow = true;
   } else {
-    // Mid-day — start from now (rounded up to the next 5 mins).
     cursor = roundUpToFiveMins(now);
     if (cursor > end) cursor = new Date(end);
   }
 
-  const availableMins = Math.max(0, Math.round((end - cursor) / (1000 * 60)));
-
   return {
     start: cursor,
     end,
-    availableMins,
+    availableMins: Math.max(0, Math.round((end - cursor) / (1000 * 60))),
     isToday: !rolledToTomorrow,
     rolledToTomorrow,
   };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3 — FALLBACK PRIORITY SCHEDULER
-// Runs when Gemini is unavailable, errors out (after retries), or returns junk.
-//
-// Algorithm — Weighted Priority + Urgency, time-window aware:
-//   score = PRIORITY_SCORE[priority] + URGENCY_SCORE[urgencyBracket]
-//   Sort tasks descending by score; ties broken by earliest combined deadline.
-//   Detect the real time range left in the workday (from NOW, not a fixed 9am).
-//   Assign sequential time blocks inside that window.
-//   Inject a break every BREAK_THRESHOLD_MINS of continuous work.
-//   Tasks that don't fit in the remaining window are flagged as overflow.
+// SECTION 3 — FALLBACK SCHEDULER
 // ─────────────────────────────────────────────────────────────────────────────
-function buildFallbackSchedule(tasks, prompt) {
-  const now = new Date();
 
-  // Only schedule pending (not completed) tasks — uses the robust check so a
-  // just-completed task can never sneak back into a reschedule.
+function buildFallbackSchedule(tasks, prompt) {
+  const now     = new Date();
   const pending = (tasks || []).filter(t => !isCompleted(t));
 
   if (pending.length === 0) {
@@ -280,10 +218,8 @@ function buildFallbackSchedule(tasks, prompt) {
     );
   }
 
-  // Recognise the time range we have to work with.
   const win = getScheduleWindow(now);
 
-  // Score and enrich each task.
   const scored = pending.map(task => ({
     ...task,
     _score:    (PRIORITY_SCORE[task.priority?.toLowerCase()] ?? PRIORITY_SCORE.medium)
@@ -293,7 +229,6 @@ function buildFallbackSchedule(tasks, prompt) {
     _overdue:  isOverdue(task, now),
   }));
 
-  // Sort: overdue first → highest score → earliest deadline.
   scored.sort((a, b) => {
     if (a._overdue !== b._overdue) return a._overdue ? -1 : 1;
     if (b._score !== a._score) return b._score - a._score;
@@ -303,49 +238,33 @@ function buildFallbackSchedule(tasks, prompt) {
     return a._deadline - b._deadline;
   });
 
-  // Build time blocks inside the available window.
   let cursor = new Date(win.start);
   const workdayEnd = win.end;
-
   let workedMins = 0;
   let plannedMins = 0;
-  const blocks   = [];
+  const blocks = [];
 
   for (const task of scored) {
-    if (cursor >= workdayEnd) {
-      blocks.push({ overflow: true, task });
-      continue;
-    }
-
-    // Insert a break before the next task if the work threshold is crossed.
+    if (cursor >= workdayEnd) { blocks.push({ overflow: true, task }); continue; }
     if (workedMins >= BREAK_THRESHOLD_MINS && blocks.some(b => b.task)) {
       const breakEnd = addMinutes(cursor, BREAK_DURATION_MINS);
       if (breakEnd <= workdayEnd) {
         blocks.push({ isBreak: true, start: new Date(cursor), end: breakEnd });
-        cursor     = breakEnd;
+        cursor = breakEnd;
         workedMins = 0;
       }
     }
-
     const end = addMinutes(cursor, task._duration);
-
-    // If the task would spill past the end of the window, flag as overflow.
-    if (end > workdayEnd) {
-      blocks.push({ overflow: true, task });
-      continue;
-    }
-
+    if (end > workdayEnd) { blocks.push({ overflow: true, task }); continue; }
     blocks.push({ task, start: new Date(cursor), end, overflow: false });
-    cursor      = end;
-    workedMins += task._duration;
+    cursor = end;
+    workedMins  += task._duration;
     plannedMins += task._duration;
   }
 
-  // ── Render plain text (matches the frontend's whiteSpace: pre-wrap renderer) ──
-  const overdueTasks = scored.filter(t => t._overdue);
+  const overdueTasks   = scored.filter(t => t._overdue);
   const scheduledCount = blocks.filter(b => b.task && !b.overflow).length;
   const overflowCount  = blocks.filter(b => b.overflow).length;
-
   const dayLabel = win.rolledToTomorrow ? 'tomorrow' : 'today';
   const windowStr = `${formatTime(win.start)} – ${formatTime(win.end)} (${formatDuration(win.availableMins)} free)`;
 
@@ -357,7 +276,6 @@ function buildFallbackSchedule(tasks, prompt) {
     `────────────────────────────────────────`,
   ];
 
-  // Overdue callout up top.
   if (overdueTasks.length > 0) {
     lines.push(`\n⚠️  OVERDUE — handle these first (${overdueTasks.length}):`);
     overdueTasks.forEach(t => {
@@ -371,20 +289,13 @@ function buildFallbackSchedule(tasks, prompt) {
 
   let slot = 1;
   for (const block of blocks) {
-    if (block.isBreak) {
-      lines.push(`\n☕  ${formatTime(block.start)} – ${formatTime(block.end)}   Break`);
-      continue;
-    }
-    if (block.overflow) continue; // overflow summarised below
-
+    if (block.isBreak) { lines.push(`\n☕  ${formatTime(block.start)} – ${formatTime(block.end)}   Break`); continue; }
+    if (block.overflow) continue;
     const { task, start, end } = block;
-    const dueStr  = task.dueDate
-      ? `${formatDate(task.dueDate)}${task.dueTime ? ' at ' + task.dueTime : ''}`
-      : 'No due date';
+    const dueStr  = task.dueDate ? `${formatDate(task.dueDate)}${task.dueTime ? ' at ' + task.dueTime : ''}` : 'No due date';
     const tagStr  = task.tags?.length ? `  #${task.tags.join(' #')}` : '';
     const catStr  = task.category ? `[${task.category}]` : '';
     const overdueFlag = task._overdue ? '  ⚠️ OVERDUE' : '';
-
     lines.push(
       `\n${slot}. ${formatTime(start)} – ${formatTime(end)}  (${formatDuration(task._duration)})` +
       `\n   ${task.title}  ${catStr}${tagStr}${overdueFlag}` +
@@ -394,7 +305,6 @@ function buildFallbackSchedule(tasks, prompt) {
     slot++;
   }
 
-  // Overflow summary — tasks that didn't fit the remaining window.
   const overflowBlocks = blocks.filter(b => b.overflow);
   if (overflowBlocks.length > 0) {
     lines.push(`\n────────────────────────────────────────`);
@@ -415,13 +325,11 @@ function buildFallbackSchedule(tasks, prompt) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4 — GEMINI CONTEXT BUILDER
-// Converts the task array into a rich, unambiguous string for the prompt.
+// SECTION 4 — GEMINI CONTEXT + PROMPT BUILDERS
 // ─────────────────────────────────────────────────────────────────────────────
+
 function buildTasksContext(tasks, now = new Date()) {
-  if (!tasks || tasks.length === 0) {
-    return '\n\nNo tasks available. Provide general scheduling advice only.';
-  }
+  if (!tasks || tasks.length === 0) return '\n\nNo tasks available. Provide general scheduling advice only.';
 
   const pending   = tasks.filter(t => !isCompleted(t));
   const completed = tasks.filter(t =>  isCompleted(t));
@@ -429,40 +337,25 @@ function buildTasksContext(tasks, now = new Date()) {
   const formatTask = (task, idx) => {
     const deadline = combineDueDateAndTime(task.dueDate, task.dueTime);
     const deadlineStr = deadline
-      ? deadline.toLocaleString('en-US', {
-          weekday: 'short', month: 'short', day: 'numeric',
-          hour: '2-digit', minute: '2-digit', hour12: true,
-        })
+      ? deadline.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })
       : 'No deadline';
-
     const overdueStr = isOverdue(task, now) ? '  [OVERDUE]' : '';
-
     const rows = [
       `${idx + 1}. "${task.title}"${overdueStr}`,
       `   Priority:  ${task.priority || 'medium'}`,
       `   Deadline:  ${deadlineStr}`,
       `   Category:  ${task.category || 'General'}`,
     ];
-
-    if (task.estimatedTime) {
-      rows.push(`   Est. time: ${task.estimatedTime} (≈${parseEstimatedTime(task.estimatedTime)} min)`);
-    }
-    if (task.tags?.length) {
-      rows.push(`   Tags:      ${task.tags.join(', ')}`);
-    }
-    if (task.description) {
-      rows.push(`   Notes:     ${task.description.substring(0, 150)}`);
-    }
-
+    if (task.estimatedTime) rows.push(`   Est. time: ${task.estimatedTime} (≈${parseEstimatedTime(task.estimatedTime)} min)`);
+    if (task.tags?.length)  rows.push(`   Tags:      ${task.tags.join(', ')}`);
+    if (task.description)   rows.push(`   Notes:     ${task.description.substring(0, 150)}`);
     return rows.join('\n');
   };
 
   let ctx = `\n\n── PENDING TASKS (${pending.length}) — these are the ONLY tasks you may schedule ──\n`;
-  if (pending.length > 0) {
-    ctx += pending.map((t, i) => formatTask(t, i)).join('\n\n');
-  } else {
-    ctx += 'None. All tasks are completed — do not invent or reschedule anything.';
-  }
+  ctx += pending.length > 0
+    ? pending.map((t, i) => formatTask(t, i)).join('\n\n')
+    : 'None. All tasks are completed — do not invent or reschedule anything.';
 
   if (completed.length > 0) {
     ctx += `\n\n── ALREADY COMPLETED (${completed.length}) — DO NOT SCHEDULE OR MENTION THESE AS TODO ──\n`;
@@ -475,18 +368,9 @@ function buildTasksContext(tasks, now = new Date()) {
   return ctx;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5 — GEMINI PROMPT BUILDER
-// ─────────────────────────────────────────────────────────────────────────────
 function buildGeminiPrompt(userPrompt, tasksContext, now = new Date()) {
-  const dateStr = now.toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-  });
-  const timeStr = now.toLocaleTimeString('en-US', {
-    hour: '2-digit', minute: '2-digit', hour12: true,
-  });
-
-  // Give Gemini the same time-window awareness the fallback uses.
+  const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
   const win = getScheduleWindow(now);
   const windowDay = win.rolledToTomorrow ? 'tomorrow' : 'today';
   const windowStr =
@@ -526,44 +410,34 @@ STRICT RULES — follow all of them, no exceptions:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 6 — GEMINI CALL WITH RETRIES
-// Tries Gemini up to GEMINI_MAX_ATTEMPTS times with exponential backoff + jitter.
-// Only transient errors (rate limits, 5xx, timeouts, network) are retried;
-// permanent errors (bad key, 400/401/403) fail fast straight to the fallback.
-// Returns the validated text on success, or throws after exhausting retries.
+// SECTION 5 — GEMINI CALL WITH RETRIES  (mirrors aiRoutes.js)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Extracts an HTTP-ish status code from a Gemini SDK error, if present. */
 function extractStatus(err) {
   if (!err) return null;
   if (typeof err.status === 'number') return err.status;
   if (typeof err.statusCode === 'number') return err.statusCode;
-  // The SDK often embeds the code in the message, e.g. "[429 Too Many Requests]".
   const m = String(err.message || '').match(/\[?(\d{3})\b/);
   return m ? parseInt(m[1], 10) : null;
 }
 
-/** Decides whether an error is worth retrying. */
 function isRetryableError(err) {
   const status = extractStatus(err);
   if (status !== null) return RETRYABLE_STATUS.has(status);
-
-  // No status — treat network/timeout/abort style errors as transient.
   const msg = String(err?.message || '').toLowerCase();
   return (
-    msg.includes('timeout') ||
-    msg.includes('timed out') ||
-    msg.includes('network') ||
+    msg.includes('timeout')      ||
+    msg.includes('timed out')    ||
+    msg.includes('network')      ||
     msg.includes('fetch failed') ||
-    msg.includes('econnreset') ||
+    msg.includes('econnreset')   ||
     msg.includes('socket hang up') ||
-    msg.includes('aborted') ||
-    msg.includes('overloaded') ||
+    msg.includes('aborted')      ||
+    msg.includes('overloaded')   ||
     msg.includes('unavailable')
   );
 }
 
-/** Validates a Gemini text response; throws if it's empty or a refusal. */
 function validateGeminiText(text) {
   const t = text?.trim();
   const isUsable =
@@ -573,19 +447,15 @@ function validateGeminiText(text) {
     !t.toLowerCase().startsWith("i am sorry") &&
     !t.toLowerCase().startsWith("i cannot") &&
     !t.toLowerCase().startsWith("i can't");
-
-  if (!isUsable) {
-    throw new Error(`Gemini response rejected: "${t?.substring(0, 60) ?? '(empty)'}"`);
-  }
+  if (!isUsable) throw new Error(`Gemini response rejected: "${t?.substring(0, 60) ?? '(empty)'}"`);
   return t;
 }
 
-/** Runs a single generateContent call with a hard timeout. */
 async function generateOnce(model, fullPrompt) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
   try {
-    const result = await model.generateContent(
+    const result   = await model.generateContent(
       { contents: [{ role: 'user', parts: [{ text: fullPrompt }] }] },
       { signal: controller.signal },
     );
@@ -596,218 +466,193 @@ async function generateOnce(model, fullPrompt) {
   }
 }
 
-/**
- * Runs the retry loop for ONE model. Resolves to validated text or throws the
- * last error. Transient errors are retried with exponential backoff; refusals
- * and permanent errors break out early.
- */
 async function callGeminiModel(genAI, modelName, fullPrompt) {
   const model = genAI.getGenerativeModel({ model: modelName });
-
   let lastErr;
-
   for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt++) {
     try {
-      const text = await generateOnce(model, fullPrompt);
-      return validateGeminiText(text);
+      return validateGeminiText(await generateOnce(model, fullPrompt));
     } catch (err) {
       lastErr = err;
-      const retryable = isRetryableError(err);
+      const retryable   = isRetryableError(err);
       const hasMoreTries = attempt < GEMINI_MAX_ATTEMPTS;
-
-      console.error(
-        `[aiRoutes] ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed ` +
-        `(retryable=${retryable}): ${err.message}`
-      );
-
-      // A rejected/refusal response (validateGeminiText) is NOT worth retrying
-      // on the same model — bail so we can try the next model / fallback.
-      const isRejection = String(err.message || '').startsWith('Gemini response rejected');
-
+      const isRejection  = String(err.message || '').startsWith('Gemini response rejected');
+      console.error(`[worker] ${modelName} attempt ${attempt}/${GEMINI_MAX_ATTEMPTS} failed (retryable=${retryable}): ${err.message}`);
       if (!retryable || isRejection || !hasMoreTries) break;
-
-      // Exponential backoff with jitter, capped at GEMINI_MAX_DELAY_MS.
-      const backoff = Math.min(
-        GEMINI_BASE_DELAY_MS * 2 ** (attempt - 1),
-        GEMINI_MAX_DELAY_MS,
-      );
-      const jitter = Math.floor(Math.random() * 250);
-      const delay = backoff + jitter;
-      console.warn(`[aiRoutes] Retrying ${modelName} in ${delay}ms…`);
-      await sleep(delay);
+      const backoff = Math.min(GEMINI_BASE_DELAY_MS * 2 ** (attempt - 1), GEMINI_MAX_DELAY_MS);
+      await sleep(backoff + Math.floor(Math.random() * 250));
     }
   }
-
   throw lastErr ?? new Error(`${modelName} failed for an unknown reason.`);
 }
 
-/**
- * Calls Gemini across the model fallback chain (GEMINI_MODELS), each with its
- * own retry loop. Returns { text, model } on success, or throws after every
- * model is exhausted so the caller can drop to the local fallback scheduler.
- *
- * Order of attempts (per request):
- *   gemini-2.5-flash      → up to GEMINI_MAX_ATTEMPTS tries
- *   gemini-2.5-flash-lite → up to GEMINI_MAX_ATTEMPTS tries   (only if flash fails)
- *   → throw → manual priority scheduler
- */
 async function callGeminiWithRetry(apiKey, fullPrompt) {
   const genAI = new GoogleGenerativeAI(apiKey);
-
   let lastErr;
-
   for (let i = 0; i < GEMINI_MODELS.length; i++) {
     const modelName = GEMINI_MODELS[i];
     try {
       const text = await callGeminiModel(genAI, modelName, fullPrompt);
-      if (i > 0) {
-        console.warn(`[aiRoutes] Recovered using backup model "${modelName}".`);
-      }
+      if (i > 0) console.warn(`[worker] Recovered using backup model "${modelName}".`);
       return { text, model: modelName };
     } catch (err) {
       lastErr = err;
       const status = extractStatus(err);
-
-      // Auth/permission failures are identical across models — switching won't
-      // help, so stop and go straight to the local fallback scheduler.
-      if (status === 401 || status === 403) {
-        console.error(`[aiRoutes] Auth error (${status}) — skipping remaining models.`);
-        break;
-      }
-
-      const nextModel = GEMINI_MODELS[i + 1];
-      if (nextModel) {
-        console.warn(`[aiRoutes] "${modelName}" unavailable — falling back to "${nextModel}".`);
-      } else {
-        console.error(`[aiRoutes] All Gemini models exhausted — using local scheduler.`);
-      }
+      if (status === 401 || status === 403) { console.error(`[worker] Auth error (${status}) — skipping remaining models.`); break; }
+      const next = GEMINI_MODELS[i + 1];
+      if (next) console.warn(`[worker] "${modelName}" unavailable — falling back to "${next}".`);
+      else       console.error(`[worker] All Gemini models exhausted — using local scheduler.`);
     }
   }
-
   throw lastErr ?? new Error('All Gemini models failed.');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 7 — ROUTE HANDLERS
-//
-// POST /schedule  — validates input, enqueues a BullMQ job, returns 202 + jobId.
-//                   The actual Gemini call happens in workers/scheduleWorker.js.
-//
-// GET  /schedule/:jobId — polls MongoDB for the job result.  The frontend calls
-//                         this every few seconds until status === 'completed' | 'failed'.
+// SECTION 6 — WORKER PROCESSOR
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * POST /api/ai/schedule
- *
- * Body:
- *   { prompt: string, taskIds: string[] }
- *
- * taskIds — an array of MongoDB Task._id strings for tasks this user wants
- *   scheduled. The worker fetches the authoritative task documents from MongoDB,
- *   so we never bloat Redis with large task objects.
- *
- * Returns 202 { jobId } immediately; the long-running Gemini call happens in
- * the worker process.
+ * Core job handler. Receives job.data = { userId, taskIds, prompt }.
+ * Uses job.id (always available) as the bullJobId key — never reads bullJobId
+ * from job.data to avoid the race condition where the worker starts before
+ * the API route has had a chance to call job.updateData({ bullJobId }).
  */
-router.post('/schedule', async (req, res) => {
-  const { prompt, taskIds } = req.body;
+async function processScheduleJob(job) {
+  const { userId, taskIds, prompt } = job.data;
+  // Use job.id directly — this is always set by BullMQ before the processor runs.
+  const bullJobId = String(job.id);
 
-  // ── Validation ──────────────────────────────────────────────────────────────
-  if (!prompt || !prompt.trim()) {
-    return res.status(400).json({ message: 'Prompt is required.' });
+  console.log(`[worker] Processing job ${bullJobId} for user ${userId} — ${taskIds.length} task IDs`);
+
+  // 1. Mark job as processing in MongoDB.
+  //    upsert:true so if the API hasn't created the doc yet we still have a record.
+  await ScheduleJob.findOneAndUpdate(
+    { bullJobId },
+    { $set: { bullJobId, userId, status: 'processing' } },
+    { upsert: true },
+  );
+
+  // 2. Fetch tasks from MongoDB (authoritative source — not Redis).
+  //    Only fetch tasks that belong to this user (safety check).
+  const tasks = taskIds.length > 0
+    ? await Task.find({ _id: { $in: taskIds }, user: userId }).lean()
+    : [];
+
+  console.log(`[worker] Fetched ${tasks.length}/${taskIds.length} tasks from MongoDB`);
+
+  // 3. Try Gemini, fall back to local scheduler.
+  const apiKey = process.env.GEMINI_API_KEY;
+  let response, source, model;
+
+  if (apiKey) {
+    try {
+      const now          = new Date();
+      const tasksContext = buildTasksContext(tasks, now);
+      const fullPrompt   = buildGeminiPrompt(prompt, tasksContext, now);
+      const result       = await callGeminiWithRetry(apiKey, fullPrompt);
+      response = result.text;
+      source   = 'gemini';
+      model    = result.model;
+    } catch (err) {
+      console.error('[worker] Gemini unavailable after retries — using fallback:', err.message);
+    }
+  } else {
+    console.warn('[worker] GEMINI_API_KEY not set — using fallback scheduler.');
   }
 
-  // taskIds must be an array of valid Mongo ObjectId strings (or empty).
-  const rawIds = Array.isArray(taskIds) ? taskIds : [];
-  const validIds = rawIds.filter(id => mongoose.isValidObjectId(id));
-
-  if (rawIds.length !== validIds.length) {
-    return res.status(400).json({ message: 'One or more taskIds are not valid ObjectIds.' });
+  if (!response) {
+    response = buildFallbackSchedule(tasks, prompt);
+    source   = 'fallback';
+    model    = null;
   }
 
-  const userId = req.user?.id;
-  if (!userId) {
-    return res.status(401).json({ message: 'Unauthorised.' });
-  }
+  // 4. Write result to MongoDB.
+  await ScheduleJob.findOneAndUpdate(
+    { bullJobId },
+    { $set: { status: 'completed', response, source, model } },
+  );
 
-  // ── Enqueue ──────────────────────────────────────────────────────────────────
-  try {
-    // Add a lightweight job payload — only IDs, never the full task objects.
-    // NOTE: we do NOT include bullJobId in the payload. The worker reads job.id
-    // directly (always available) to avoid a race condition where it starts
-    // processing before this route has had a chance to call updateData().
-    const job = await scheduleQueue.add('generate-schedule', {
-      userId,
-      taskIds: validIds,
-      prompt:  prompt.trim(),
-    });
+  console.log(`[worker] Job ${bullJobId} completed (source=${source})`);
+  return { source, model };
+}
 
-    // Persist the job reference in MongoDB so the polling endpoint can look it
-    // up without touching Redis. Use upsert in case the worker already wrote
-    // the document first (it uses upsert:true on its own findOneAndUpdate).
-    await ScheduleJob.findOneAndUpdate(
-      { bullJobId: String(job.id) },
-      { $setOnInsert: { bullJobId: String(job.id), userId, prompt: prompt.trim(), status: 'pending' } },
-      { upsert: true },
-    );
-
-    console.log(`[aiRoutes] Enqueued schedule job ${job.id} for user ${userId}`);
-
-    return res.status(202).json({
-      jobId:   String(job.id),
-      message: 'Schedule generation started. Poll /api/ai/schedule/:jobId for the result.',
-    });
-
-  } catch (err) {
-    console.error('[aiRoutes] Failed to enqueue schedule job:', err.message);
-    return res.status(500).json({ message: 'Failed to start schedule generation. Please try again.' });
-  }
-});
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 7 — BOOTSTRAP
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * GET /api/ai/schedule/:jobId
+ * Creates and starts the BullMQ Worker, attaching event listeners.
+ * MongoDB must already be connected before calling this.
  *
- * Polls the job result.  Returns:
- *   202 { status: 'pending' | 'processing' }   — still running
- *   200 { status: 'completed', response, source, model, tasksAnalyzed }
- *   200 { status: 'failed', errorMessage }
- *   404 if the jobId doesn't exist / belongs to a different user
+ * Call this from server.js to run the worker in-process (no second terminal
+ * needed), or let start() below call it when the file is run standalone.
+ *
+ * Returns the Worker instance so the caller can close it on shutdown.
  */
-router.get('/schedule/:jobId', async (req, res) => {
-  const { jobId } = req.params;
-  const userId    = req.user?.id;
+export function startWorker() {
+  const worker = new Worker(
+    SCHEDULE_QUEUE_NAME,
+    async (job) => {
+      try {
+        return await processScheduleJob(job);
+      } catch (err) {
+        // Mark the job as failed in MongoDB so the polling endpoint can return an error.
+        // Use job.id directly — never job.data.bullJobId (race condition).
+        await ScheduleJob.findOneAndUpdate(
+          { bullJobId: String(job.id) },
+          { $set: { status: 'failed', errorMessage: err.message || 'Unknown worker error' } },
+        ).catch(() => {});  // swallow — don't mask the real error
+        throw err;  // re-throw so BullMQ records the failure + handles retries
+      }
+    },
+    {
+      connection: redisConnection,
+      concurrency: 5, // process up to 5 schedule jobs at once
+    },
+  );
 
-  if (!userId) {
-    return res.status(401).json({ message: 'Unauthorised.' });
-  }
+  worker.on('completed', (job, result) => {
+    console.log(`[worker] ✓ Job ${job.id} finished — source: ${result?.source}`);
+  });
 
-  try {
-    const doc = await ScheduleJob.findOne({ bullJobId: jobId, userId });
+  worker.on('failed', (job, err) => {
+    console.error(`[worker] ✗ Job ${job?.id} failed — ${err.message}`);
+  });
 
-    if (!doc) {
-      return res.status(404).json({ message: 'Job not found.' });
-    }
+  worker.on('error', (err) => {
+    console.error('[worker] Worker error:', err.message);
+  });
 
-    // Job still in flight — tell the client to keep polling.
-    if (doc.status === 'pending' || doc.status === 'processing') {
-      return res.status(202).json({ status: doc.status });
-    }
+  console.log(`[worker] 🚀 Schedule worker started, listening on queue "${SCHEDULE_QUEUE_NAME}"`);
+  return worker;
+}
 
-    // Job finished (completed or failed).
-    return res.status(200).json({
-      status:        doc.status,
-      response:      doc.response      ?? null,
-      source:        doc.source        ?? null,
-      model:         doc.model         ?? null,
-      errorMessage:  doc.errorMessage  ?? null,
-    });
+// ── Standalone entry-point (node workers/scheduleWorker.js) ──────────────────
+// Only runs when this file is executed directly, not when imported by server.js.
+async function start() {
+  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/chronosyncDB';
+  await mongoose.connect(mongoUri);
+  console.log('[worker] MongoDB connected');
 
-  } catch (err) {
-    console.error('[aiRoutes] Error fetching schedule job:', err.message);
-    return res.status(500).json({ message: 'Error fetching job status.' });
-  }
-});
+  const worker = startWorker();
 
-export default router;
+  // Graceful shutdown (standalone only — server.js handles its own shutdown).
+  const shutdown = async (signal) => {
+    console.log(`[worker] ${signal} received — shutting down gracefully…`);
+    await worker.close();
+    await mongoose.connection.close();
+    process.exit(0);
+  };
 
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+}
+
+// Detect if this file is the entry-point (ES module equivalent of require.main === module).
+const isMain = process.argv[1] === fileURLToPath(import.meta.url);
+if (isMain) {
+  start().catch(err => {
+    console.error('[worker] Fatal startup error:', err);
+    process.exit(1);
+  });
+}

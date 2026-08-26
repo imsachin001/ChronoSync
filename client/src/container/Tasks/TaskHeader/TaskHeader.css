@@ -1,3 +1,7 @@
+/* ═══════════════════════════════════════════════════
+   TaskHeader.css — Priority dropdown + filter styles
+═══════════════════════════════════════════════════ */
+
 .priority-dropdown {
   position: relative;
   display: inline-block;
@@ -7,15 +11,17 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 1rem;
+  padding: 0.45rem 0.9rem;
   background: var(--card-bg);
-  border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
+  border: 1.5px solid var(--border-color);
+  border-radius: 8px;
   color: var(--text-color);
   cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 500;
   transition: var(--transition);
+  white-space: nowrap;
 }
-
 .dropdown-btn:hover {
   border-color: var(--primary-color);
   color: var(--primary-color);
@@ -23,70 +29,55 @@
 
 .dropdown-content {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 6px);
   right: 0;
   background: var(--card-bg);
   border: 1px solid var(--border-color);
-  border-radius: 0.5rem;
-  padding: 0.5rem;
-  min-width: 150px;
+  border-radius: 12px;
+  padding: 0.4rem;
+  min-width: 160px;
   z-index: 1000;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.25);
+  animation: dd-fade-down 0.15s ease;
+}
+
+@keyframes dd-fade-down {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .priority-option {
   display: block;
   width: 100%;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.8rem;
   text-align: left;
   background: none;
   border: none;
   color: var(--text-color);
   cursor: pointer;
+  border-radius: 8px;
+  font-size: 0.84rem;
   transition: var(--transition);
 }
-
 .priority-option:hover {
-  background: var(--bg-color);
+  background: rgba(99,102,241,0.1);
   color: var(--primary-color);
 }
-
 .priority-option.active {
   color: var(--primary-color);
-  font-weight: 500;
+  font-weight: 600;
 }
 
+/* Active filter pill (re-declared here to override tasks.css safely) */
 .filter-btn.active {
   background: var(--primary-color);
-  color: white;
+  color: #ffffff;
   border-color: var(--primary-color);
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  .dropdown-content {
-    background: var(--bg-color);
-    border-color: var(--border-color);
-}
-
-  .priority-option:hover {
-    background: var(--card-bg);
-  }
-}
-
-/* Responsive styles */
+/* ── Responsive ───────────────────────────────────── */
 @media (max-width: 768px) {
-  .priority-dropdown {
-    width: 100%;
-  }
-
-  .dropdown-btn {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .dropdown-content {
-    width: 100%;
-    right: 0;
-  }
-} 
+  .priority-dropdown { width: 100%; }
+  .dropdown-btn { width: 100%; justify-content: center; }
+  .dropdown-content { width: 100%; left: 0; right: 0; }
+}

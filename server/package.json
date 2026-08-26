@@ -6,16 +6,20 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "worker": "node workers/scheduleWorker.js",
+    "dev:worker": "nodemon workers/scheduleWorker.js"
   },
   "dependencies": {
     "@clerk/backend": "^2.6.3",
     "@clerk/clerk-sdk-node": "^4.13.23",
     "@google/generative-ai": "^0.21.0",
     "bcryptjs": "^2.4.3",
+    "bullmq": "^6.2.0",
     "cors": "^2.8.5",
     "dotenv": "^16.0.3",
     "express": "^4.21.2",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.0",
     "mongoose": "^7.0.3",
     "node-cron": "^3.0.3",
