@@ -693,8 +693,7 @@ async function callGeminiWithRetry(apiKey, fullPrompt) {
 // POST /schedule  — validates input, enqueues a BullMQ job, returns 202 + jobId.
 //                   The actual Gemini call happens in workers/scheduleWorker.js.
 //
-// GET  /schedule/:jobId — polls MongoDB for the job result.  The frontend calls
-//                         this every few seconds until status === 'completed' | 'failed'.
+// GET  /schedule/:jobId — polls BullMQ for the job state and return value.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -768,39 +767,26 @@ router.post('/schedule', async (req, res) => {
 /**
  * GET /api/ai/schedule/:jobId
  *
- * Polls the job result.  Returns:
- *   202 { status: 'pending' | 'processing' }   — still running
- *   200 { status: 'completed', response, source, model, tasksAnalyzed }
- *   200 { status: 'failed', errorMessage }
- *   404 if the jobId doesn't exist / belongs to a different user
+ * Polls the BullMQ job state. Returns:
+ *   200 { jobId, status, result }
+ *   404 if the jobId doesn't exist
  */
 router.get('/schedule/:jobId', async (req, res) => {
-  const { jobId } = req.params;
-  const userId    = req.user?.id;
-
-  if (!userId) {
-    return res.status(401).json({ message: 'Unauthorised.' });
-  }
-
   try {
-    const doc = await ScheduleJob.findOne({ bullJobId: jobId, userId });
+    const job = await scheduleQueue.getJob(req.params.jobId);
 
-    if (!doc) {
-      return res.status(404).json({ message: 'Job not found.' });
+    if (!job) {
+      return res.status(404).json({
+        error: 'Job not found',
+      });
     }
 
-    // Job still in flight — tell the client to keep polling.
-    if (doc.status === 'pending' || doc.status === 'processing') {
-      return res.status(202).json({ status: doc.status });
-    }
+    const state = await job.getState();
 
-    // Job finished (completed or failed).
-    return res.status(200).json({
-      status:        doc.status,
-      response:      doc.response      ?? null,
-      source:        doc.source        ?? null,
-      model:         doc.model         ?? null,
-      errorMessage:  doc.errorMessage  ?? null,
+    return res.json({
+      jobId: job.id,
+      status: state,
+      result: job.returnvalue || null,
     });
 
   } catch (err) {
