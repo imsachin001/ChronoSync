@@ -3,6 +3,11 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import mongoose from 'mongoose';
 import { scheduleQueue } from '../queues/scheduleQueue.js';
 import ScheduleJob from '../models/ScheduleJob.js';
+import {
+  calculateTaskScore,
+  compareScoredTasks,
+  scoreTask,
+} from '../utils/scheduleScoring.js';
 
 const router = express.Router();
 
@@ -31,7 +36,7 @@ const BREAK_DURATION_MINS     = 15;
 // ── Gemini retry tuning ──────────────────────────────────────────────────────
 // Model fallback chain — tried in order until one succeeds. flash-lite is the
 // cheaper/faster backup used when flash errors out or is unavailable.
-const GEMINI_MODELS           = ['gemini-2.5-flash', 'gemini-2.5-flash-lite'];
+const GEMINI_MODELS           = ['gemini-2.5-flash-lite'];
 const GEMINI_MAX_ATTEMPTS     = 3;     // total tries (1 initial + 2 retries)
 const GEMINI_BASE_DELAY_MS    = 600;   // first backoff delay; doubles each retry
 const GEMINI_MAX_DELAY_MS     = 4000;  // cap on a single backoff delay
@@ -257,8 +262,8 @@ function getScheduleWindow(now = new Date()) {
 // SECTION 3 — FALLBACK PRIORITY SCHEDULER
 // Runs when Gemini is unavailable, errors out (after retries), or returns junk.
 //
-// Algorithm — Weighted Priority + Urgency, time-window aware:
-//   score = PRIORITY_SCORE[priority] + URGENCY_SCORE[urgencyBracket]
+// Algorithm — deterministic weighted scoring, time-window aware:
+//   score = 40% urgency + 30% deadline proximity + 20% importance + 10% effort
 //   Sort tasks descending by score; ties broken by earliest combined deadline.
 //   Detect the real time range left in the workday (from NOW, not a fixed 9am).
 //   Assign sequential time blocks inside that window.
@@ -284,24 +289,10 @@ function buildFallbackSchedule(tasks, prompt) {
   const win = getScheduleWindow(now);
 
   // Score and enrich each task.
-  const scored = pending.map(task => ({
-    ...task,
-    _score:    (PRIORITY_SCORE[task.priority?.toLowerCase()] ?? PRIORITY_SCORE.medium)
-             + getUrgencyScore(task.dueDate, task.dueTime, now),
-    _duration: parseEstimatedTime(task.estimatedTime),
-    _deadline: combineDueDateAndTime(task.dueDate, task.dueTime),
-    _overdue:  isOverdue(task, now),
-  }));
+  const scored = pending.map(task => scoreTask(task, now));
 
   // Sort: overdue first → highest score → earliest deadline.
-  scored.sort((a, b) => {
-    if (a._overdue !== b._overdue) return a._overdue ? -1 : 1;
-    if (b._score !== a._score) return b._score - a._score;
-    if (!a._deadline && !b._deadline) return 0;
-    if (!a._deadline) return 1;
-    if (!b._deadline) return -1;
-    return a._deadline - b._deadline;
-  });
+  scored.sort(compareScoredTasks);
 
   // Build time blocks inside the available window.
   let cursor = new Date(win.start);
@@ -486,42 +477,46 @@ function buildGeminiPrompt(userPrompt, tasksContext, now = new Date()) {
     hour: '2-digit', minute: '2-digit', hour12: true,
   });
 
-  // Give Gemini the same time-window awareness the fallback uses.
-  const win = getScheduleWindow(now);
-  const windowDay = win.rolledToTomorrow ? 'tomorrow' : 'today';
-  const windowStr =
-    `${formatTime(win.start)}–${formatTime(win.end)} ${windowDay} ` +
-    `(~${formatDuration(win.availableMins)} of free working time left)`;
+  // Detect if the user mentioned specific hours or a sleep/blocked window.
+  const userMentionedHours = /\b(\d{1,2}(:\d{2})?\s*(am|pm)|work(ing)?\s*(hour|from|until|till)|sleep|wake|bed|available)/i.test(userPrompt);
+  const windowLine = userMentionedHours
+    ? ''
+    : 'Working hours: not specified. If you need a timed schedule, ask the user for their available hours, OR produce a clean priority-ordered task list without specific times.';
 
   return `You are ChronoSync's AI scheduling assistant.
 Today is ${dateStr}. Current time: ${timeStr}.
-Available working window: ${windowStr}.
-Standard work hours are ${WORKDAY_START_HOUR}:00–${WORKDAY_END_HOUR}:00.
+${windowLine}
 
 USER REQUEST:
 ${userPrompt}
 ${tasksContext}
 
-STRICT RULES — follow all of them, no exceptions:
-1. SCHEDULE ONLY the tasks under "PENDING TASKS". These are the only valid tasks.
-2. NEVER include, schedule, mention, or reference any task under "ALREADY COMPLETED".
-   Those tasks are finished. If the user asks to reschedule, rebuild the schedule
-   using the PENDING TASKS only — silently drop anything now completed.
-3. Never invent tasks that are not in the PENDING TASKS list.
-5. Overdue tasks (marked [OVERDUE]) must be addressed first and flagged clearly.
-6. Schedule tasks INSIDE the available working window above. Start the first block
-   at the current time (or the window start), not at an arbitrary hour.
-7. Use each task's "Est. time" for block length. If none exists, default to 45 minutes.
-8. Order tasks by priority and urgency (closest deadline / highest priority first).
-9. Recommend a 10–15 minute break every 90 minutes of continuous work.
-10. If tasks cannot all fit in the remaining window, schedule the most important ones
-    and clearly list which tasks overflow to the next working block.
-11. If the user's request is conversational (a question, not a schedule request),
-    answer it concisely — do not generate a full schedule unless asked.
-12. Do NOT use markdown: no ##, no **bold**, no _italic_, no backticks.
-    This is a plain-text chat. Use numbered lists and plain dashes only.
-13. Separate each schedule block or section with a blank line.
-14. Keep the response under 450 words unless a full daily schedule genuinely needs more.
+STRICT RULES — follow ALL of them without exception:
+1. SCHEDULE ONLY tasks listed under "PENDING TASKS". Never invent or add tasks.
+2. NEVER schedule, mention, or reference any task under "ALREADY COMPLETED".
+   Those are finished. Silently drop them even if the user asks to reschedule.
+3. Overdue tasks (marked [OVERDUE]) must be prioritised first, clearly labelled.
+4. SLEEP / UNAVAILABILITY WINDOWS — ABSOLUTE HARD CONSTRAINT:
+   If the user mentions a sleep time, bedtime, unavailable period, or any blocked
+   window (e.g. "sleep at 2 AM, wake at 8 AM"), you MUST NOT schedule ANY task
+   inside that window. Split the schedule into pre-sleep and post-wake blocks.
+   Any tasks that cannot fit before the blocked window go into the post-wake block.
+   Never suggest doing work during a sleep or rest period.
+5. If the user specified working hours, schedule ONLY within those hours.
+   If they did not specify hours AND there is no sleep window, ask for their
+   available hours OR give a priority-ordered list without specific times.
+6. Use each task's "Est. time" for block length. Default to 45 minutes if missing.
+7. Order by priority then deadline urgency (high priority / closest deadline first).
+8. Add a 10–15 minute break after every 90 minutes of continuous work.
+9. If tasks cannot all fit, schedule the most important ones first and clearly list
+   which tasks overflow and when they could be done instead.
+10. If the user's message is a question (not a schedule request), answer concisely.
+    Do NOT generate a full timed schedule unless explicitly asked.
+11. Do NOT use markdown: no ##, no **bold**, no _italic_, no backticks, no tables.
+    Plain text only. Use numbered lists and plain dashes.
+12. Do NOT show internal scores, percentages, or system metadata to the user.
+13. Blank line between each schedule block or section.
+14. Keep response under 450 words unless a full daily schedule genuinely needs more.
 15. If no tasks exist, give practical general scheduling advice only.`;
 }
 

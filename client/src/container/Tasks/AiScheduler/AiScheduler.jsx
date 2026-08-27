@@ -149,18 +149,22 @@ const AiScheduler = () => {
       }
 
       if (!result) throw new Error('Schedule generation timed out. Please try again.');
-      if (result.status === 'failed') throw new Error(result.errorMessage || 'Worker failed to generate a schedule.');
+      if (result.status === 'failed') {
+        throw new Error(result.result?.errorMessage || 'Worker failed to generate a schedule.');
+      }
+
+      const scheduleResult = result.result || {};
 
       const sourceLabel =
-        result.source === 'fallback'
+        scheduleResult.source === 'fallback'
           ? '\n\n— Scheduled by built-in priority algorithm (AI unavailable) —'
           : '';
 
       setMessages(prev => [...prev, {
         type:    'ai',
-        content: result.response + sourceLabel,
-        source:  result.source,
-        model:   result.model,
+        content: (scheduleResult.response || 'The scheduler returned no response.') + sourceLabel,
+        source:  scheduleResult.source,
+        model:   scheduleResult.model,
       }]);
     } catch (error) {
       console.error('[AiScheduler] Request failed:', error);
