@@ -705,7 +705,7 @@ async function callGeminiWithRetry(apiKey, fullPrompt) {
  * the worker process.
  */
 router.post('/schedule', async (req, res) => {
-  const { prompt, taskIds } = req.body;
+  const { prompt, taskIds, conversationHistory } = req.body;
 
   // ── Validation ──────────────────────────────────────────────────────────────
   if (!prompt || !prompt.trim()) {
@@ -719,6 +719,17 @@ router.post('/schedule', async (req, res) => {
   if (rawIds.length !== validIds.length) {
     return res.status(400).json({ message: 'One or more taskIds are not valid ObjectIds.' });
   }
+
+  // conversationHistory — optional array of {type, content} objects (last N messages).
+  // Sanitise to prevent oversized payloads: cap at 10 messages, truncate long content.
+  const MAX_HISTORY = 10;
+  const HISTORY_CONTENT_LIMIT = 500;
+  const sanitisedHistory = Array.isArray(conversationHistory)
+    ? conversationHistory
+        .filter(m => m && ['user', 'ai'].includes(m.type) && typeof m.content === 'string')
+        .slice(-MAX_HISTORY)
+        .map(m => ({ type: m.type, content: m.content.substring(0, HISTORY_CONTENT_LIMIT) }))
+    : [];
 
   const userId = req.user?.id;
   if (!userId) {
@@ -735,6 +746,7 @@ router.post('/schedule', async (req, res) => {
       userId,
       taskIds: validIds,
       prompt:  prompt.trim(),
+      conversationHistory: sanitisedHistory,
     });
 
     // Persist the job reference in MongoDB so the polling endpoint can look it

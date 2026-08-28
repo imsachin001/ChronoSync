@@ -51,7 +51,9 @@ const AiScheduler = () => {
     if (savedChat) {
       try {
         const chatData = JSON.parse(savedChat);
-        setMessages(chatData.messages);
+        // Restore full message history so context is preserved when continuing
+        const allMessages = Array.isArray(chatData.messages) ? chatData.messages : [];
+        setMessages(allMessages);
       } catch { /* ignore */ } finally {
         localStorage.removeItem('viewingChat');
       }
@@ -100,6 +102,10 @@ const AiScheduler = () => {
     const trimmed = (overrideText ?? prompt).trim();
     if (!trimmed || isLoading) return;
 
+    // Capture current messages BEFORE updating state, so history doesn't include
+    // the message we're about to send (the worker builds it into the prompt itself).
+    const historySnapshot = messages.slice(-5).map(m => ({ type: m.type, content: m.content }));
+
     setMessages(prev => [...prev, { type: 'user', content: trimmed }]);
     setPrompt('');
     setIsLoading(true);
@@ -108,12 +114,12 @@ const AiScheduler = () => {
       const freshTasks = await fetchTasks();
       const taskIds    = freshTasks.map(t => t._id).filter(Boolean);
 
-      // Step 1 — enqueue
+      // Step 1 — enqueue (include last-5 messages so Gemini has conversational context)
       const enqueueToken = await getToken();
       const enqueueRes   = await fetch(`${API_BASE_URL}/api/ai/schedule`, {
         method:  'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${enqueueToken}` },
-        body:    JSON.stringify({ prompt: trimmed, taskIds }),
+        body:    JSON.stringify({ prompt: trimmed, taskIds, conversationHistory: historySnapshot }),
       });
 
       if (!enqueueRes.ok) {

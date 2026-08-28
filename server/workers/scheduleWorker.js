@@ -359,7 +359,7 @@ function buildTasksContext(tasks, now = new Date()) {
   return ctx;
 }
 
-function buildGeminiPrompt(userPrompt, tasksContext, now = new Date()) {
+function buildGeminiPrompt(userPrompt, tasksContext, now = new Date(), conversationHistory = []) {
   const dateStr = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
@@ -370,18 +370,31 @@ function buildGeminiPrompt(userPrompt, tasksContext, now = new Date()) {
     ? ''  // user stated their own constraints — Gemini reads them from the request
     : 'Working hours: not specified. If you need a timed schedule, ask the user for their available hours, OR produce a clean priority-ordered task list without specific times.';
 
+  // Build the conversation history section (last N messages for context).
+  let historySection = '';
+  if (Array.isArray(conversationHistory) && conversationHistory.length > 0) {
+    const historyLines = conversationHistory.map(m => {
+      const role = m.type === 'user' ? 'User' : 'Assistant';
+      return `${role}: ${m.content}`;
+    });
+    historySection = `\nCONVERSATION HISTORY (most recent messages, for context only):\n${historyLines.join('\n')}\n`;
+  }
+
   return `You are ChronoSync's AI scheduling assistant.
 Today is ${dateStr}. Current time: ${timeStr}.
 ${windowLine}
-
-USER REQUEST:
+${historySection}
+CURRENT USER REQUEST:
 ${userPrompt}
 ${tasksContext}
 
 STRICT RULES — follow ALL of them without exception:
 1. SCHEDULE ONLY tasks listed under "PENDING TASKS". Never invent or add tasks.
-2. NEVER schedule, mention, or reference any task under "ALREADY COMPLETED".
-   Those are finished. Silently drop them even if the user asks to reschedule.
+2. Tasks listed under "ALREADY COMPLETED" are finished by default and should NOT appear
+   in a general schedule. EXCEPTION: if the user explicitly asks to redo, repeat, or
+   re-schedule a specific completed task (e.g. "I need to redo task X"), you MAY include
+   it in the schedule and treat it as if it were pending. Acknowledge briefly that it was
+   completed and that you are re-scheduling it per their request.
 3. Overdue tasks (marked [OVERDUE]) must be prioritised first, clearly labelled.
 4. SLEEP / UNAVAILABILITY WINDOWS — ABSOLUTE HARD CONSTRAINT:
    If the user mentions a sleep time, bedtime, unavailable period, or any blocked
@@ -397,14 +410,17 @@ STRICT RULES — follow ALL of them without exception:
 8. Add a 10–15 minute break after every 90 minutes of continuous work.
 9. If tasks cannot all fit, schedule the most important ones first and clearly list
    which tasks overflow and when they could be done instead.
-10. If the user's message is a question (not a schedule request), answer concisely.
+10. ALWAYS honour what the user asks. If the user's request conflicts with a default
+    rule (like re-doing a completed task), follow the user's explicit intent.
+    Do NOT refuse or ignore a reasonable user request.
+11. If the user's message is a question (not a schedule request), answer concisely.
     Do NOT generate a full timed schedule unless explicitly asked.
-11. Do NOT use markdown: no ##, no **bold**, no _italic_, no backticks, no tables.
+12. Do NOT use markdown: no ##, no **bold**, no _italic_, no backticks, no tables.
     Plain text only. Use numbered lists and plain dashes.
-12. Do NOT show internal scores, percentages, or system metadata to the user.
-13. Blank line between each schedule block or section.
-14. Keep response under 450 words unless a full daily schedule genuinely needs more.
-15. If no tasks exist, give practical general scheduling advice only.`;
+13. Do NOT show internal scores, percentages, or system metadata to the user.
+14. Blank line between each schedule block or section.
+15. Keep response under 450 words unless a full daily schedule genuinely needs more.
+16. If no tasks exist, give practical general scheduling advice only.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -516,11 +532,11 @@ async function callGeminiWithRetry(apiKey, fullPrompt) {
  * the API route has had a chance to call job.updateData({ bullJobId }).
  */
 async function processScheduleJob(job) {
-  const { userId, taskIds, prompt } = job.data;
+  const { userId, taskIds, prompt, conversationHistory = [] } = job.data;
   // Use job.id directly — this is always set by BullMQ before the processor runs.
   const bullJobId = String(job.id);
 
-  console.log(`[worker] Processing job ${bullJobId} for user ${userId} — ${taskIds.length} task IDs`);
+  console.log(`[worker] Processing job ${bullJobId} for user ${userId} — ${taskIds.length} task IDs, ${conversationHistory.length} history msgs`);
 
   // 1. Mark job as processing in MongoDB.
   //    upsert:true so if the API hasn't created the doc yet we still have a record.
@@ -546,7 +562,7 @@ async function processScheduleJob(job) {
     try {
       const now          = new Date();
       const tasksContext = buildTasksContext(tasks, now);
-      const fullPrompt   = buildGeminiPrompt(prompt, tasksContext, now);
+      const fullPrompt   = buildGeminiPrompt(prompt, tasksContext, now, conversationHistory);
       const result       = await callGeminiWithRetry(apiKey, fullPrompt);
       response = result.text;
       source   = 'gemini';
