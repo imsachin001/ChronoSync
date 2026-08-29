@@ -82,11 +82,19 @@ function calculateDeadlineScore(deadline, now) {
   return Math.max(0, Math.round(100 - (daysUntilDeadline / 30) * 100));
 }
 
+function calculateImportanceScore(task) {
+  if (typeof task?.importance === 'number' && Number.isFinite(task.importance)) {
+    return Math.min(100, Math.max(0, task.importance * 10));
+  }
+
+  return PRIORITY_IMPORTANCE[String(task?.priority || 'medium').toLowerCase()] ?? 60;
+}
+
 function calculateTaskScore(task, now = new Date()) {
   const deadline = combineDueDateAndTime(task?.dueDate, task?.dueTime);
   const urgency = URGENCY_SCORE[getUrgencyBracket(deadline, now)];
   const deadlineScore = calculateDeadlineScore(deadline, now);
-  const importance = PRIORITY_IMPORTANCE[String(task?.priority || 'medium').toLowerCase()] ?? 60;
+  const importance = calculateImportanceScore(task);
   const effort = Math.min(100, Math.round((parseEstimatedTime(task?.estimatedTime) / 240) * 100));
 
   return Math.round(
