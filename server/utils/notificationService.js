@@ -37,10 +37,18 @@ const getUserEmail = async (userId) => {
   try {
     const user = await clerkClient.users.getUser(userId);
     const primaryEmail = user.emailAddresses.find(email => email.id === user.primaryEmailAddressId);
-    return primaryEmail ? primaryEmail.emailAddress : null;
+    return {
+      email: primaryEmail ? primaryEmail.emailAddress : null,
+      userNotFound: false
+    };
   } catch (error) {
+    if (error?.status === 404 || error?.statusCode === 404) {
+      console.warn(`Clerk user ${userId} no longer exists; skipping notification.`);
+      return { email: null, userNotFound: true };
+    }
+
     console.error('Error fetching user email from Clerk:', error);
-    return null;
+    return { email: null, userNotFound: false };
   }
 };
 
@@ -84,7 +92,11 @@ const sendEmail = async (to, subject, html, text) => {
 // Send overdue task notification
 export const sendOverdueTaskNotification = async (task) => {
   try {
-    const userEmail = await getUserEmail(task.user);
+    const { email: userEmail, userNotFound } = await getUserEmail(task.user);
+    if (userNotFound) {
+      return { success: false, error: 'USER_NOT_FOUND', permanent: true };
+    }
+
     if (!userEmail) {
       console.warn(`No email found for user ${task.user}`);
       return { success: false, error: 'No email found' };
@@ -105,7 +117,11 @@ export const sendOverdueTaskNotification = async (task) => {
 // Send reminder notification
 export const sendReminderNotification = async (note) => {
   try {
-    const userEmail = await getUserEmail(note.user);
+    const { email: userEmail, userNotFound } = await getUserEmail(note.user);
+    if (userNotFound) {
+      return { success: false, error: 'USER_NOT_FOUND', permanent: true };
+    }
+
     if (!userEmail) {
       console.warn(`No email found for user ${note.user}`);
       return { success: false, error: 'No email found' };
@@ -130,7 +146,11 @@ export const sendDailyTaskDigest = async (userId, tasks) => {
       return { success: false, error: 'No tasks to send' };
     }
 
-    const userEmail = await getUserEmail(userId);
+    const { email: userEmail, userNotFound } = await getUserEmail(userId);
+    if (userNotFound) {
+      return { success: false, error: 'USER_NOT_FOUND', permanent: true };
+    }
+
     if (!userEmail) {
       console.warn(`No email found for user ${userId}`);
       return { success: false, error: 'No email found' };

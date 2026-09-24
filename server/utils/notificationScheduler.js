@@ -28,12 +28,16 @@ export const scheduleOverdueTaskCheck = () => {
       for (const task of overdueTasks) {
         const result = await sendOverdueTaskNotification(task);
         
-        if (result.success) {
-          // Mark notification as sent
+        if (result.success || result.permanent) {
+          // Do not retry notifications for deleted Clerk users.
           task.overdueNotificationSent = true;
           task.lastNotificationSent = now;
           await task.save();
-          console.log(`✅ Sent overdue notification for task: ${task.title}`);
+          if (result.success) {
+            console.log(`✅ Sent overdue notification for task: ${task.title}`);
+          } else {
+            console.warn(`⏭️ Skipped overdue notification for task ${task.title}: ${result.error}`);
+          }
         } else {
           console.error(`❌ Failed to send notification for task: ${task.title}`, result.error);
         }
@@ -72,11 +76,15 @@ export const scheduleReminderCheck = () => {
       for (const note of dueReminders) {
         const result = await sendReminderNotification(note);
         
-        if (result.success) {
-          // Mark notification as sent
+        if (result.success || result.permanent) {
+          // Do not retry notifications for deleted Clerk users.
           note.reminderNotificationSent = true;
           await note.save();
-          console.log(`✅ Sent reminder notification for note: ${note.title || 'Untitled'}`);
+          if (result.success) {
+            console.log(`✅ Sent reminder notification for note: ${note.title || 'Untitled'}`);
+          } else {
+            console.warn(`⏭️ Skipped reminder notification for note ${note.title || 'Untitled'}: ${result.error}`);
+          }
         } else {
           console.error(`❌ Failed to send reminder for note: ${note.title || 'Untitled'}`, result.error);
         }
@@ -169,10 +177,14 @@ export const scheduleUpcomingTaskReminder = () => {
       for (const task of upcomingTasks) {
         const result = await sendOverdueTaskNotification(task);
         
-        if (result.success) {
+        if (result.success || result.permanent) {
           task.lastNotificationSent = now;
           await task.save();
-          console.log(`✅ Sent upcoming reminder for task: ${task.title}`);
+          if (result.success) {
+            console.log(`✅ Sent upcoming reminder for task: ${task.title}`);
+          } else {
+            console.warn(`⏭️ Skipped upcoming reminder for task ${task.title}: ${result.error}`);
+          }
         }
       }
     } catch (error) {
